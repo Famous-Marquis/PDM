@@ -1,0 +1,279 @@
+import math
+import torch
+import torch.nn as nn
+from torch.nn import init
+from torch.nn import functional as F
+
+
+# B,C,H,W
+class Swish(nn.Module):
+    def forward(self, X):
+        return X + torch.sigmoid(X)
+
+
+class AttnBlock(nn.Module):
+    def __init__(self, in_ch):
+        super().__init__()
+        self.q_proj = nn.Conv2d(in_ch, in_ch, 1, stride=1, padding=0)
+        self.k_proj = nn.Conv2d(in_ch, in_ch, 1, stride=1, padding=0)
+        self.v_proj = nn.Conv2d(in_ch, in_ch, 1, stride=1, padding=0)
+        ############################
+        self.norm = nn.GroupNorm(32, in_ch)
+        ############################
+        self.proj = nn.Conv2d(in_ch, in_ch, 1, stride=1, padding=0)
+        self.initialize()
+
+    def initialize(self):
+        for module in [self.q_proj, self.k_proj, self.v_proj, self.proj]:
+            init.xavier_uniform_(module.weight)
+            init.zeros_(module.bias)  # type:ignore
+        init.xavier_uniform_(self.proj.weight, gain=1e-5)
+
+    def forward(self, x):
+        B, C, H, W = x.shape
+        h = self.norm(x)
+        q = self.q_proj(h)
+        k = self.k_proj(h)
+        v = self.v_proj(h)
+
+        q = q.permute(0, 2, 3, 1)
+        assert list(q.shape) == [B, H, W, C], "q.shape incorrect!!"
+        q = q.view(B, H * W, C)
+
+        k = k.view(B, C, H * W)
+
+        w = torch.bmm(q, k) * (int(C) ** (-0.5))
+
+        assert list(w.shape) == [B, H * W, H * W], "w.shape incorrect!!"
+        w = F.softmax(w, dim=-1)
+
+        v = v.permute(0, 2, 3, 1)
+        assert list(v.shape) == [B, H, W, C]
+        v = v.view(B, H * W, C)
+        h = torch.bmm(w, v)
+        assert list(h.shape) == [B, H * W, C]
+        h = h.view(B, H, W, C).permute(0, 3, 1, 2)
+
+        h = self.proj(h)
+        return x + h
+
+
+class ResBlock(nn.Module):
+    def __init__(self, in_ch, out_ch, tdim, dropout, attn=False):
+        super().__init__()
+        self.block1 = nn.Sequential(
+            nn.GroupNorm(32, in_ch),
+            Swish(),
+            nn.Conv2d(in_ch, out_ch, 3, stride=1, padding=1),
+        )
+        self.temb_proj = nn.Sequential(Swish(), nn.Linear(tdim, out_ch))
+        # ?time_embedding 的输出？？
+        self.block2 = nn.Sequential(
+            nn.GroupNorm(32, out_ch),
+            Swish(),
+            nn.Dropout(dropout),
+            nn.Conv2d(out_ch, out_ch, 3, stride=1, padding=1),
+        )
+        if in_ch != out_ch:
+            self.shortcut = nn.Conv2d(in_ch, out_ch, 1, padding=0)
+        else:
+            self.shortcut = nn.Identity()
+
+        if attn:
+            self.attn_block = AttnBlock(out_ch)
+        else:
+            self.attn_block = nn.Identity()
+
+        self.initialize()
+
+    def initialize(self):
+        for module in self.modules():
+            if isinstance(module, (nn.Conv2d, nn.Linear)):
+                init.xavier_uniform_(module.weight)
+                init.zeros_(module.bias)  # type:ignore
+        init.xavier_uniform_(self.block2[-1].weight, gain=1e-5)  # type: ignore
+
+    def forward(self, X, temb):
+        Y = self.block1(X)
+        Y += self.temb_proj(temb)[:, :, None, None]
+        Y = self.block2(Y)
+
+        Y += self.shortcut(X)
+        Y = self.attn_block(Y)
+
+        return Y
+
+
+class TimeEmbedding(nn.Module):
+    def __init__(self, T, d_model, tdim):
+        assert d_model % 2 == 0
+        super().__init__()
+        omega = torch.arange(0, d_model, 2) / d_model * math.log(10000)
+        omega = torch.exp(-omega)
+
+        pos = torch.arange(T).float()
+        omega = pos[:, None] * omega[None, :]
+
+        assert list(omega.shape) == [T, d_model / 2]
+        omega = torch.stack([torch.sin(omega), torch.cos(omega)], dim=-1)
+        assert list(omega.shape) == [T, d_model / 2, 2]
+
+        omega = omega.view(T, d_model)
+        self.time_embedding = nn.Sequential(
+            nn.Embedding.from_pretrained(omega),
+            nn.Linear(d_model, tdim),
+            Swish(),
+            nn.Linear(tdim, tdim),
+        )
+        self.initialize()
+
+    def initialize(self):
+        for module in self.modules():
+            if isinstance(module, nn.Linear):
+                init.xavier_uniform_(module.weight)
+                init.zeros_(module.bias)
+
+    def forward(self, t):
+        emb = self.time_embedding(t)
+        return emb
+
+
+class DownSample(nn.Module):
+    def __init__(self, in_ch):
+        super().__init__()
+        self.main = nn.Conv2d(in_ch, in_ch, 3, stride=2, padding=1)
+        self.initialize()
+
+    def initialize(self):
+        init.xavier_uniform_(self.main.weight)
+        init.zeros_(self.main.bias)  # type:ignore
+
+    def forward(self, X, temb):
+        X = self.main(X)
+        return X
+
+
+class UpSample(nn.Module):
+    def __init__(self, in_ch):
+        super().__init__()
+        self.main = nn.Conv2d(in_ch, in_ch, 3, stride=1, padding=1)
+        self.initialize()
+
+    def initialize(self):
+        init.xavier_uniform_(self.main.weight)
+        init.zeros_(self.main.bias)  # type:ignore
+
+    def forward(self, X, temb):
+        X = F.interpolate(X, scale_factor=2, mode="nearest")
+        X = self.main(X)
+        return X
+
+
+class UNet(nn.Module):
+    def __init__(self, T, ch, ch_mult, attn, nums_resblocks, dropout) -> None:
+        super().__init__()
+        assert all([i < len(ch_mult) for i in attn]), "attn index out of bound"
+        tdim = ch * 4
+
+        self.time_embedding = TimeEmbedding(T, ch, tdim)
+        ###########~ 可能需要一层卷积初始化,使得通道数变为偶数!
+        self.head = nn.Conv2d(1, ch, 3, stride=1, padding=1)
+
+        self.downblocks = nn.ModuleList()
+        chs = [ch]
+        now_ch = ch
+        for i, mult in enumerate(ch_mult):
+            out_ch = ch * mult
+
+            for _ in range(nums_resblocks):
+                self.downblocks.append(
+                    ResBlock(
+                        in_ch=now_ch,
+                        out_ch=out_ch,
+                        tdim=tdim,
+                        dropout=dropout,
+                        attn=(i in attn),
+                    )
+                )
+                now_ch = out_ch
+                chs.append(now_ch)
+
+            if i != len(ch_mult) - 1:
+                self.downblocks.append(DownSample(now_ch))
+                chs.append(now_ch)
+
+        self.middleblocks = nn.ModuleList(
+            [
+                ResBlock(now_ch, now_ch, tdim, dropout, attn=True),
+                ResBlock(now_ch, now_ch, tdim, dropout, attn=False),
+            ]
+        )
+
+        self.upblocks = nn.ModuleList()
+
+        for i, mult in reversed(list(enumerate(ch_mult))):
+            out_ch = ch * mult
+            for _ in range(nums_resblocks + 1):
+                self.upblocks.append(
+                    ResBlock(
+                        in_ch=now_ch + chs.pop(),
+                        out_ch=out_ch,
+                        tdim=tdim,
+                        dropout=dropout,
+                        attn=(i in attn),
+                    )
+                )
+                now_ch = out_ch
+
+            if i != 0:
+                self.upblocks.append(UpSample(now_ch))
+
+        assert len(chs) == 0
+
+        self.tail = nn.Sequential(
+            nn.GroupNorm(32, now_ch),
+            Swish(),
+            nn.Conv2d(now_ch, 1, 3, stride=1, padding=1),
+        )
+        self.initialize()
+
+    def initialize(self):
+        init.xavier_uniform_(self.head.weight)
+        init.zeros_(self.head.bias)  # type:ignore
+        init.xavier_uniform_(self.tail[-1].weight)  # type:ignore
+        init.zeros_(self.tail[-1].bias)  # type:ignore
+
+    def forward(self, X, t):
+        temb = self.time_embedding(t)
+
+        h = self.head(X)
+        hs = [h]
+        for layer in self.downblocks:
+            h = layer(h, temb)
+            hs.append(h)
+        for layer in self.middleblocks:
+            h = layer(h, temb)
+        for layer in self.upblocks:
+            if isinstance(layer, ResBlock):
+                h = torch.cat([h, hs.pop()], dim=1)
+            h = layer(h, temb)
+        h = self.tail(h)
+
+        assert len(hs) == 0
+        return h
+
+
+if __name__ == "__main__":
+    batch_size = 2
+    model = UNet(
+        T=1000, ch=128, ch_mult=[1, 2, 2, 2], attn=[1], nums_resblocks=2, dropout=0.1
+    )
+    x = torch.randn(batch_size, 1, 256, 256)
+    t = torch.randint(1000, (batch_size,))
+    y = model(x, t)
+    print("test input size \t[Batch,Channels,Height,Weight] is ", list(x.shape))
+    print("output size \t\t[Batch,Channels,Height,Weight] is ", list(y.shape))
+
+
+# ?点扩散函数，可以从像素点提取吗？
+# *可以
