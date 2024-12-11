@@ -1,2 +1,4 @@
 DDPM_data/
 cache/
+.vscode/
+Checkpoints/ckpt_*

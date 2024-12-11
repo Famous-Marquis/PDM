@@ -1330,6 +1330,13 @@ def ZernikePoly(i, r=None, theta=None):
 
 ## 计算Zernike系数
 def NollZernikeCoeffients(z_num=ZERNIKE_NUMS, dr0=7):
+    """
+    计算Zernike系数
+
+    Return
+    --------------
+    list : dtype=float64
+    """
     import scipy.special as S
     from numpy import linalg as la
 
@@ -1371,9 +1378,9 @@ class PhaseScreen:
     """
     Parameter
     ---------------
-    N: int
+    N : int
         pixels
-    znum: int
+    znum : int
         Zernike Order
     """
 
@@ -1630,6 +1637,9 @@ class PhaseScreen:
 
 if __name__ == "__main__":
     N = 256
-    ph = FtPhaseScreen(1, N)
-    z = PhaseScreen(N=64)
-    z.fit(ph)
+    # ph = FtPhaseScreen(1, N)
+    ps = PhaseScreen()
+    ps.simulate_turbulence(10, "zernike")
+    z_coes = ps.get_coeffients()
+    print(len(z_coes))
+    print(z_coes)

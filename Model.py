@@ -4,6 +4,8 @@ import torch.nn as nn
 from torch.nn import init
 from torch.nn import functional as F
 
+GROUPDIVIDE = 2
+
 
 # B,C,H,W
 class Swish(nn.Module):
@@ -11,16 +13,16 @@ class Swish(nn.Module):
         return X + torch.sigmoid(X)
 
 
-class AttnBlock(nn.Module):
+class SeqAttnBlock(nn.Module):
     def __init__(self, in_ch):
         super().__init__()
-        self.q_proj = nn.Conv2d(in_ch, in_ch, 1, stride=1, padding=0)
-        self.k_proj = nn.Conv2d(in_ch, in_ch, 1, stride=1, padding=0)
-        self.v_proj = nn.Conv2d(in_ch, in_ch, 1, stride=1, padding=0)
+        self.q_proj = nn.Conv1d(in_ch, in_ch, 1, stride=1, padding=0)
+        self.k_proj = nn.Conv1d(in_ch, in_ch, 1, stride=1, padding=0)
+        self.v_proj = nn.Conv1d(in_ch, in_ch, 1, stride=1, padding=0)
         ############################
-        self.norm = nn.GroupNorm(32, in_ch)
+        self.norm = nn.GroupNorm(GROUPDIVIDE, in_ch)
         ############################
-        self.proj = nn.Conv2d(in_ch, in_ch, 1, stride=1, padding=0)
+        self.proj = nn.Conv1d(in_ch, in_ch, 1, stride=1, padding=0)
         self.initialize()
 
     def initialize(self):
@@ -30,29 +32,29 @@ class AttnBlock(nn.Module):
         init.xavier_uniform_(self.proj.weight, gain=1e-5)
 
     def forward(self, x):
-        B, C, H, W = x.shape
+        B, C, L = x.shape
         h = self.norm(x)
         q = self.q_proj(h)
         k = self.k_proj(h)
         v = self.v_proj(h)
 
-        q = q.permute(0, 2, 3, 1)
-        assert list(q.shape) == [B, H, W, C], "q.shape incorrect!!"
-        q = q.view(B, H * W, C)
+        q = q.permute(0, 2, 1)
+        assert list(q.shape) == [B, L, C], "q.shape incorrect!!"
+        q = q.view(B, L, C)
 
-        k = k.view(B, C, H * W)
+        k = k.view(B, C, L)
 
         w = torch.bmm(q, k) * (int(C) ** (-0.5))
 
-        assert list(w.shape) == [B, H * W, H * W], "w.shape incorrect!!"
+        assert list(w.shape) == [B, L, L], "w.shape incorrect!!"
         w = F.softmax(w, dim=-1)
 
-        v = v.permute(0, 2, 3, 1)
-        assert list(v.shape) == [B, H, W, C]
-        v = v.view(B, H * W, C)
+        v = v.permute(0, 2, 1)
+        assert list(v.shape) == [B, L, C]
+        v = v.view(B, L, C)
         h = torch.bmm(w, v)
-        assert list(h.shape) == [B, H * W, C]
-        h = h.view(B, H, W, C).permute(0, 3, 1, 2)
+        assert list(h.shape) == [B, L, C]
+        h = h.view(B, L, C).permute(0, 2, 1)
 
         h = self.proj(h)
         return x + h
@@ -62,25 +64,25 @@ class ResBlock(nn.Module):
     def __init__(self, in_ch, out_ch, tdim, dropout, attn=False):
         super().__init__()
         self.block1 = nn.Sequential(
-            nn.GroupNorm(32, in_ch),
+            nn.GroupNorm(GROUPDIVIDE, in_ch),
             Swish(),
-            nn.Conv2d(in_ch, out_ch, 3, stride=1, padding=1),
+            nn.Conv1d(in_ch, out_ch, 3, stride=1, padding=1),
         )
         self.temb_proj = nn.Sequential(Swish(), nn.Linear(tdim, out_ch))
         # ?time_embedding 的输出？？
         self.block2 = nn.Sequential(
-            nn.GroupNorm(32, out_ch),
+            nn.GroupNorm(GROUPDIVIDE, out_ch),
             Swish(),
             nn.Dropout(dropout),
-            nn.Conv2d(out_ch, out_ch, 3, stride=1, padding=1),
+            nn.Conv1d(out_ch, out_ch, 3, stride=1, padding=1),
         )
         if in_ch != out_ch:
-            self.shortcut = nn.Conv2d(in_ch, out_ch, 1, padding=0)
+            self.shortcut = nn.Conv1d(in_ch, out_ch, 1, padding=0)
         else:
             self.shortcut = nn.Identity()
 
         if attn:
-            self.attn_block = AttnBlock(out_ch)
+            self.attn_block = SeqAttnBlock(out_ch)
         else:
             self.attn_block = nn.Identity()
 
@@ -88,14 +90,14 @@ class ResBlock(nn.Module):
 
     def initialize(self):
         for module in self.modules():
-            if isinstance(module, (nn.Conv2d, nn.Linear)):
+            if isinstance(module, (nn.Conv1d, nn.Linear)):
                 init.xavier_uniform_(module.weight)
                 init.zeros_(module.bias)  # type:ignore
         init.xavier_uniform_(self.block2[-1].weight, gain=1e-5)  # type: ignore
 
     def forward(self, X, temb):
         Y = self.block1(X)
-        Y += self.temb_proj(temb)[:, :, None, None]
+        Y += self.temb_proj(temb)[:, :, None]
         Y = self.block2(Y)
 
         Y += self.shortcut(X)
@@ -141,7 +143,7 @@ class TimeEmbedding(nn.Module):
 class DownSample(nn.Module):
     def __init__(self, in_ch):
         super().__init__()
-        self.main = nn.Conv2d(in_ch, in_ch, 3, stride=2, padding=1)
+        self.main = nn.Conv1d(in_ch, in_ch, 3, stride=2, padding=1)
         self.initialize()
 
     def initialize(self):
@@ -156,7 +158,7 @@ class DownSample(nn.Module):
 class UpSample(nn.Module):
     def __init__(self, in_ch):
         super().__init__()
-        self.main = nn.Conv2d(in_ch, in_ch, 3, stride=1, padding=1)
+        self.main = nn.Conv1d(in_ch, in_ch, 3, stride=1, padding=1)
         self.initialize()
 
     def initialize(self):
@@ -172,12 +174,12 @@ class UpSample(nn.Module):
 class UNet(nn.Module):
     def __init__(self, T, ch, ch_mult, attn, nums_resblocks, dropout) -> None:
         super().__init__()
-        assert all([i < len(ch_mult) for i in attn]), "attn index out of bound"
+        assert all([i <= len(ch_mult) for i in attn]), "attn index out of bound"
         tdim = ch * 4
 
         self.time_embedding = TimeEmbedding(T, ch, tdim)
         ###########~ 可能需要一层卷积初始化,使得通道数变为偶数!
-        self.head = nn.Conv2d(1, ch, 3, stride=1, padding=1)
+        self.head = nn.Conv1d(1, ch, 3, stride=1, padding=1)
 
         self.downblocks = nn.ModuleList()
         chs = [ch]
@@ -231,9 +233,9 @@ class UNet(nn.Module):
         assert len(chs) == 0
 
         self.tail = nn.Sequential(
-            nn.GroupNorm(32, now_ch),
+            nn.GroupNorm(GROUPDIVIDE, now_ch),
             Swish(),
-            nn.Conv2d(now_ch, 1, 3, stride=1, padding=1),
+            nn.Conv1d(now_ch, 1, 3, stride=1, padding=1),
         )
         self.initialize()
 
@@ -264,15 +266,15 @@ class UNet(nn.Module):
 
 
 if __name__ == "__main__":
-    batch_size = 2
+    batch_size = 128
     model = UNet(
         T=1000, ch=128, ch_mult=[1, 2, 2, 2], attn=[1], nums_resblocks=2, dropout=0.1
     )
-    x = torch.randn(batch_size, 1, 256, 256)
+    x = torch.randn(batch_size, 1, 64)
     t = torch.randint(1000, (batch_size,))
     y = model(x, t)
-    print("test input size \t[Batch,Channels,Height,Weight] is ", list(x.shape))
-    print("output size \t\t[Batch,Channels,Height,Weight] is ", list(y.shape))
+    print("test input size \t[Batch,Channels,Length] is ", list(x.shape))
+    print("output size \t\t[Batch,Channels,Length] is ", list(y.shape))
 
 
 # ?点扩散函数，可以从像素点提取吗？

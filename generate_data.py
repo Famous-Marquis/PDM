@@ -6,14 +6,10 @@ gen_data: 多线程并行产生模拟湍流数据
 """
 
 # TODO: 优化一下多线程任务时,进度条显示错乱的问题
-from pydoc import doc
-import matplotlib.pyplot as plt
 import pandas as pd
 import glob
 import multiprocessing as mp
-from typing import List, Union
 import numpy as np
-from scipy import signal
 from PIL import Image
 import os
 from tqdm import tqdm
@@ -113,30 +109,39 @@ def gen_data(args: tuple[int, int, list, int, int]):
         position=position,
         dynamic_ncols=True,
     ) as pbar:
-        list_of_images = []
+        list_of_samples = []
         for Dr0 in Dr0_list:
             for j in range(length):
                 ps.simulate_turbulence(Dr0, method="zernike")
-                image = ps.get_screen()
+                z_coes = np.array(ps.get_coeffients())
+                assert list(z_coes.shape) == [
+                    ZERNIKE_NUMS,
+                ], "z-coes形状不对！"
+                # 数据预处理
+                mean = z_coes.mean()
+                var = z_coes.var()
+                z_coes = (z_coes - mean) / var
+                # image = ps.get_screen()
                 # plt.imshow(image)
                 # plt.colorbar()
                 # plt.show()
-                assert list(image.shape) == [256, 256], "生成的相位屏长宽不对!"
-                assert type(image) == np.ndarray
-                assert image.dtype == np.float64
-                list_of_images.append(image)
+                # assert list(image.shape) == [256, 256], "生成的相位屏长宽不对!"
+                # assert type(image) == np.ndarray
+                # assert image.dtype == np.float64
+                # list_of_samples.append(image)
+                list_of_samples.append(z_coes)
                 pbar.update(1)
-        assert len(list_of_images) == length * repeat_times
+        assert len(list_of_samples) == length * repeat_times
         # 存储数据集
         pbar.close()
-    series = pd.Series(list_of_images)
+    series = pd.Series(list_of_samples)
     # plt.imshow(series[0])  # type: ignore
     # plt.colorbar()
     # plt.show()
     series.to_pickle(os.path.join(DATADIR, "data", "{}_DDPM.pkl".format(idx)))
 
 
-def generate_data(length_per_Dr0, nums_Dr0, Dr0_range=[5, 15], parallel_processors=6):
+def generate_data(length_per_Dr0, nums_Dr0, Dr0_range=[5, 15], parallel_processors=2):
     ##设置生成样本的参数
     assert (
         nums_Dr0 % parallel_processors == 0
@@ -152,7 +157,10 @@ def generate_data(length_per_Dr0, nums_Dr0, Dr0_range=[5, 15], parallel_processo
     repeat_times = int(nums_Dr0 / parallel_processors)
 
     args_tuple = list(
-        ((length_per_Dr0, repeat_times, Dr0_range, idx, idx) for idx in range(6))
+        (
+            (length_per_Dr0, repeat_times, Dr0_range, idx, idx)
+            for idx in range(parallel_processors)
+        )
     )
     with mp.Pool(parallel_processors) as pool:
         pool.map(gen_data, args_tuple)
@@ -183,10 +191,14 @@ def generate_data(length_per_Dr0, nums_Dr0, Dr0_range=[5, 15], parallel_processo
         file_list
     ), "合成出来的数据元素数目不对"
     assert type(merged_series[0]) == np.ndarray, "Series中元素不是numpy数组"
-    assert list(merged_series[0].shape) == [256, 256], "Series中的元素大小不是256*256"
+    # assert list(merged_series[0].shape) == [256, 256], "Series中的元素大小不是256*256"
+    assert list(merged_series[0].shape) == [
+        ZERNIKE_NUMS,
+    ]
     merged_series.to_pickle("./DDPM_data/merged_data.pkl")
     print(f'All "_DDPM.npy" files have been merged into "./DDPM_data/merged_data.pkl"')
 
 
 if __name__ == "__main__":
     generate_data(length_per_Dr0=25, nums_Dr0=12)
+    # gen_data((25, 1, [5, 6], 1, 1))

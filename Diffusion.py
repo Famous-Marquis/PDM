@@ -39,7 +39,10 @@ class GaussianDiffusionTrainer(nn.Module):
             extract(self.sqrt_alpha_bar, t, x_0.shape) * x_0
             + extract(self.sqrt_one_minus_alpha_bar, t, x_0.shape)
         ) * eps
-        loss = functional.mse_loss(self.model(x_t, t), eps, reduction="none")
+        loss = (
+            functional.mse_loss(self.model(x_t, t), eps, reduction="none")
+            / x_0.shape[0]
+        )
         return loss
 
 

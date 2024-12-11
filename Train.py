@@ -14,7 +14,7 @@ from Diffusion import GaussianDiffusionSampler, GaussianDiffusionTrainer
 from Model import UNet
 import torch.optim as optim
 from tqdm import tqdm
-from draw_record import save_plt_img
+from draw_record import save_plt_img_config
 
 
 class NumpyDataset(Dataset):
@@ -50,6 +50,8 @@ class PandasDataset(Dataset):
         assert type(sample) == torch.Tensor
         if self.transform != None:
             item = self.transform(sample)
+        else:
+            item = sample
         return item  # .to(device=self.device)
 
 
@@ -85,7 +87,10 @@ def train(model_config: Dict):
         net_model.parameters(), lr=model_config["learning_rate"], weight_decay=1e-4
     )
     cosine_scheduler = optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=model_config["epoch"], eta_min=0, last_epoch=-1
+        optimizer,
+        T_max=model_config["epoch"],
+        eta_min=model_config["learning_rate"] / 2,
+        last_epoch=-1,
     )
     warm_up_scheduler = GradualWarmupScheduler(
         optimizer,
@@ -101,39 +106,39 @@ def train(model_config: Dict):
     loss_mean_per_epoch = []
     loss_var_per_epoch = []
     # 开始训练
+    generate_data(
+        length_per_Dr0=model_config["data_length_per_Dr0"],
+        nums_Dr0=model_config["nums_Dr0"],
+    )
+
+    dataset = PandasDataset(
+        "./DDPM_data/merged_data.pkl",
+        "cuda:0",
+        # transform=transforms.Compose(
+        #     [
+        #         # transforms.RandomHorizontalFlip(),
+        #         # transforms.ToTensor(),
+        #         # transforms.Normalize((0.5,), (0.5,)),
+        #     ]
+        # ),
+    )
+    dataloader = DataLoader(
+        dataset,
+        batch_size=model_config["batch_size"],
+        shuffle=True,
+        num_workers=0,
+        drop_last=True,
+        pin_memory=True,
+    )
+
     for e in range(model_config["epoch"]):
-        # 由于样本集太小，每次迭代后将重新生成样本集
-        generate_data(
-            length_per_Dr0=model_config["data_length_per_Dr0"],
-            nums_Dr0=model_config["nums_Dr0"],
-        )
-
-        dataset = PandasDataset(
-            "./DDPM_data/merged_data.pkl",
-            "cuda:0",
-            transform=transforms.Compose(
-                [
-                    transforms.RandomHorizontalFlip(),
-                    # transforms.ToTensor(),
-                    transforms.Normalize((0.5,), (0.5,)),
-                ]
-            ),
-        )
-        dataloader = DataLoader(
-            dataset,
-            batch_size=model_config["batch_size"],
-            shuffle=True,
-            num_workers=3,
-            drop_last=True,
-            pin_memory=True,
-        )
-
+        # //由于样本集太小，每次迭代后将重新生成样本集
         with tqdm(dataloader, dynamic_ncols=True) as tqdm_dataloader:
             losses = []
             for images in tqdm_dataloader:
                 optimizer.zero_grad()
                 x_0 = images.double().to(device)
-                loss = trainer(x_0).sum() / 100.0
+                loss = trainer(x_0).sum()
                 loss.backward()
                 torch.nn.utils.clip_grad.clip_grad_norm_(
                     net_model.parameters(), model_config["grad_clip"]
@@ -143,7 +148,7 @@ def train(model_config: Dict):
                     ordered_dict={
                         "epoch": e,
                         "loss": loss.item(),
-                        "img shape": x_0.shape,
+                        "sample shape": x_0.shape,
                         "LR": optimizer.state_dict()["param_groups"][0]["lr"],
                     }
                 )
@@ -164,10 +169,11 @@ def train(model_config: Dict):
             "loss_mean_per_epoch": loss_mean_per_epoch,
             "loss_var_per_epoch": loss_var_per_epoch,
             "learning_rate_per_epoch": learning_rate_per_epoch,
+            # "model_config": model_config,
         }
         df = pd.DataFrame(record_dict)
         df.to_pickle("./Record/record.pkl")
-        save_plt_img("./Record/record.pkl")
+        save_plt_img_config("./Record/record.pkl")
 
 
 def eval(model_config: Dict):
@@ -194,7 +200,7 @@ def eval(model_config: Dict):
             model, model_config["beta_1"], model_config["beta_T"], model_config["T"]
         ).to(device)
         noisyImage = torch.randn(
-            size=[model_config["batch_size"], 1, 256, 256],
+            size=[model_config["batch_size"], 1, 64],
         )
         saveNoise = torch.clamp(noisyImage * 0.5 + 0.5, 0, 1)
         save_image(
