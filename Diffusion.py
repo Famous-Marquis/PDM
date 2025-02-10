@@ -24,6 +24,7 @@ class GaussianDiffusionTrainer(nn.Module):
         self.T = T
 
         self.register_buffer("beta", torch.linspace(beta_1, beta_T, T).double())
+        # TODO:尝试余弦调度的β值
         self.beta: torch.Tensor
         alpha = 1 - self.beta
         alpha_bar = torch.cumprod(alpha, dim=0)
