@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as functional
+from tqdm import tqdm
 
 
 def extract(v: torch.Tensor, t: torch.Tensor, x_shape):
@@ -36,16 +37,17 @@ class GaussianDiffusionTrainer(nn.Module):
         t = torch.randint(self.T, size=(x_0.shape[0],), device=x_0.device)
         eps = torch.randn_like(x_0)
         x_t = (
-            extract(self.sqrt_alpha_bar, t, x_0.shape) * x_0
-            + extract(self.sqrt_one_minus_alpha_bar, t, x_0.shape)
-        ) * eps
+                      extract(self.sqrt_alpha_bar, t, x_0.shape) * x_0
+                      + extract(self.sqrt_one_minus_alpha_bar, t, x_0.shape)
+              ) * eps
         loss = (
-            functional.mse_loss(self.model(x_t, t), eps, reduction="none")
-            / x_0.shape[0]
+                functional.mse_loss(self.model(x_t, t), eps, reduction="none")
+                / x_0.shape[0]
         )
         return loss
 
 
+# 数值溢出，采用对数化简
 class GaussianDiffusionSampler(nn.Module):
     def __init__(self, model, beta_1, beta_T, T):
         super().__init__()
@@ -56,9 +58,9 @@ class GaussianDiffusionSampler(nn.Module):
 
         self.alpha = 1 - self.beta
         self.alpha_bar = torch.cumprod(self.alpha, dim=0)
-        self.alpha_bar_prev = functional.pad(self.alpha_bar, (1, 0), value=1)
+        self.alpha_bar_prev = functional.pad(self.alpha_bar, (1, 0), value=1)[:-1]
 
-        self.register_buffer("coeff1", 1 / torch.sqrt(self.alpha_bar))
+        self.register_buffer("coeff1", 1 / torch.sqrt(self.alpha))
         self.coeff1: torch.Tensor
         self.register_buffer(
             "coeff2",
@@ -68,7 +70,7 @@ class GaussianDiffusionSampler(nn.Module):
             / torch.sqrt(1 - self.alpha_bar),
         )
         self.coeff2: torch.Tensor
-        ##!有一点没理解方差的部分，需要重看论文
+
         self.register_buffer(
             "posterior_var",
             self.beta * (1 - self.alpha_bar_prev) / (1 - self.alpha_bar),
@@ -92,16 +94,16 @@ class GaussianDiffusionSampler(nn.Module):
 
     def forward(self, x_T):
         x_t = x_T
-        for time_step in reversed(range(self.T)):
-            print(time_step)
+        for time_step in tqdm(reversed(range(self.T)), total=self.T, desc="sampling"):
+            # print(time_step)
             t = (
-                x_t.new_ones(
-                    [
-                        x_t.shape[0],
-                    ],
-                    dtype=torch.long,
-                )
-                * time_step
+                    x_t.new_ones(
+                        [
+                            x_t.shape[0],
+                        ],
+                        dtype=torch.long,
+                    )
+                    * time_step
             )
             mean, var = self.p_mean_variance(x_t, t)
 

@@ -3,6 +3,7 @@
 """
 
 import matplotlib.axes
+import os
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib
@@ -23,12 +24,27 @@ def save_plt_img_config(record_df_path):
     ]
 
     epoch = [epoch for epoch in range(len(loss_mean_per_epoch))]
+    # # 查找最大编号，若无，则编号1。有，则编号+1
+    # folder_path="./Record/"
+    # if not os.path.exists(folder_path):
+    #     os.makedirs(folder_path)
+    # file_list=os.listdir(folder_path)
+    # numbers=[]
+    # if file_list is None:
+    #     number_next=1
+    # else:
+    #     for file_name in file_list:
+    #         number=int(file_name.split(".")[0])
+    #         numbers.append(number)
+    #     max_index=max(numbers)
+    #     number_next=max_index+1
+
 
     # 绘图
     fig = plt.figure()
     ax1 = fig.add_subplot(1, 2, 1)
-    ax1.plot(epoch[2:], (loss_mean_per_epoch[2:]), "b-o", label="loss_mean")
-    ax1.plot(epoch[2:], (loss_var_per_epoch[2:]), "r--^", label="loss_var")
+    ax1.plot(epoch[5:], (loss_mean_per_epoch[5:]), "b-o", label="loss_mean")
+    ax1.plot(epoch[5:], (loss_var_per_epoch[5:]), "r--^", label="loss_var")
     ax1.set_title("Loss - epoch")
     ax1.set_xlabel("epoch")
     ax1.legend()
@@ -38,8 +54,8 @@ def save_plt_img_config(record_df_path):
     ax2.set_xlabel("epoch")
     ax2.legend()
     plt.tight_layout()
-    plt.savefig("./Record/record.jpg")
+    plt.savefig("./Record/Record.jpg")
 
 
 if __name__ == "__main__":
-    save_plt_img_config("./Record/record.pkl")
+    save_plt_img_config("./Record/Record.pkl")

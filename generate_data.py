@@ -5,14 +5,15 @@ gen_data: 多线程并行产生模拟湍流数据
 
 """
 
-# TODO: 优化一下多线程任务时,进度条显示错乱的问题
-import pandas as pd
 import glob
 import multiprocessing as mp
-import numpy as np
-from PIL import Image
 import os
+
+import numpy as np
+import pandas as pd
+from PIL import Image
 from tqdm import tqdm
+
 from aberration import ZERNIKE_NUMS, PhaseScreen
 from beam import LG_mode
 
@@ -97,17 +98,20 @@ def gen_data(args: tuple[int, int, list, int, int]):
     length: int = args[0]
     repeat_times = args[1]
     Dr0_range = args[2]
-    Dr0_list = np.random.uniform(Dr0_range[0], Dr0_range[1], (repeat_times,))
+    if isinstance(Dr0_range, list):
+        Dr0_list = np.random.uniform(Dr0_range[0], Dr0_range[1], (repeat_times,))
+    else:
+        Dr0_list = [Dr0_range for i in range(repeat_times)]
     idx = args[3]
     position = args[4]
     ps = PhaseScreen(256, ZERNIKE_NUMS, cache_dir="TURBULENCE/cache/")
     with tqdm(
-        total=length * repeat_times,
-        desc="当前生成第{}~{}组数据".format(
-            idx * repeat_times, (idx + 1) * repeat_times
-        ),
-        position=position,
-        dynamic_ncols=True,
+            total=length * repeat_times,
+            desc="当前生成第{}~{}组数据".format(
+                idx * repeat_times, (idx + 1) * repeat_times
+            ),
+            position=position,
+            dynamic_ncols=True,
     ) as pbar:
         list_of_samples = []
         for Dr0 in Dr0_list:
@@ -118,9 +122,9 @@ def gen_data(args: tuple[int, int, list, int, int]):
                     ZERNIKE_NUMS,
                 ], "z-coes形状不对！"
                 # 数据预处理
-                mean = z_coes.mean()
-                var = z_coes.var()
-                z_coes = (z_coes - mean) / var
+                # mean = z_coes.mean()
+                # var = z_coes.var()
+                # z_coes = (z_coes - mean) / var
                 # image = ps.get_screen()
                 # plt.imshow(image)
                 # plt.colorbar()
@@ -141,10 +145,10 @@ def gen_data(args: tuple[int, int, list, int, int]):
     series.to_pickle(os.path.join(DATADIR, "data", "{}_DDPM.pkl".format(idx)))
 
 
-def generate_data(length_per_Dr0, nums_Dr0, Dr0_range=[5, 15], parallel_processors=2):
+def generate_data(length_per_Dr0, nums_Dr0, Dr0_range, parallel_processors=2, Dr0_constant=None):
     ##设置生成样本的参数
     assert (
-        nums_Dr0 % parallel_processors == 0
+            nums_Dr0 % parallel_processors == 0
     ), "样本集数量必须为PARALLEL_PROCESSORS的整数倍!"
     # 必须为 PARALLEL_PROCESSORS 的倍数
 

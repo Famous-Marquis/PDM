@@ -3,6 +3,9 @@ import torch
 import torch.nn as nn
 from torch.nn import init
 from torch.nn import functional as F
+from torchsummary import summary
+
+from aberration import ZERNIKE_NUMS
 
 GROUPDIVIDE = 2
 
@@ -20,7 +23,7 @@ class SeqAttnBlock(nn.Module):
         self.k_proj = nn.Conv1d(in_ch, in_ch, 1, stride=1, padding=0)
         self.v_proj = nn.Conv1d(in_ch, in_ch, 1, stride=1, padding=0)
         ############################
-        self.norm = nn.GroupNorm(GROUPDIVIDE, in_ch)
+        # self.norm = nn.GroupNorm(GROUPDIVIDE, in_ch)
         ############################
         self.proj = nn.Conv1d(in_ch, in_ch, 1, stride=1, padding=0)
         self.initialize()
@@ -33,7 +36,8 @@ class SeqAttnBlock(nn.Module):
 
     def forward(self, x):
         B, C, L = x.shape
-        h = self.norm(x)
+        # h = self.norm(x)
+        h=x
         q = self.q_proj(h)
         k = self.k_proj(h)
         v = self.v_proj(h)
@@ -64,14 +68,14 @@ class ResBlock(nn.Module):
     def __init__(self, in_ch, out_ch, tdim, dropout, attn=False):
         super().__init__()
         self.block1 = nn.Sequential(
-            nn.GroupNorm(GROUPDIVIDE, in_ch),
+            # nn.GroupNorm(GROUPDIVIDE, in_ch),
             Swish(),
             nn.Conv1d(in_ch, out_ch, 3, stride=1, padding=1),
         )
         self.temb_proj = nn.Sequential(Swish(), nn.Linear(tdim, out_ch))
         # ?time_embedding 的输出？？
         self.block2 = nn.Sequential(
-            nn.GroupNorm(GROUPDIVIDE, out_ch),
+            # nn.GroupNorm(GROUPDIVIDE, out_ch),
             Swish(),
             nn.Dropout(dropout),
             nn.Conv1d(out_ch, out_ch, 3, stride=1, padding=1),
@@ -136,6 +140,8 @@ class TimeEmbedding(nn.Module):
                 init.zeros_(module.bias)
 
     def forward(self, t):
+        if __name__ == "__main__":
+            t = t.int()
         emb = self.time_embedding(t)
         return emb
 
@@ -233,11 +239,12 @@ class UNet(nn.Module):
         assert len(chs) == 0
 
         self.tail = nn.Sequential(
-            nn.GroupNorm(GROUPDIVIDE, now_ch),
+            # nn.GroupNorm(GROUPDIVIDE, now_ch),
             Swish(),
             nn.Conv1d(now_ch, 1, 3, stride=1, padding=1),
         )
         self.initialize()
+        # summary(self,(300,1,ZERNIKE_NUMS))
 
     def initialize(self):
         init.xavier_uniform_(self.head.weight)
@@ -265,17 +272,21 @@ class UNet(nn.Module):
         return h
 
 
-if __name__ == "__main__":
-    batch_size = 128
-    model = UNet(
-        T=1000, ch=128, ch_mult=[1, 2, 2, 2], attn=[1], nums_resblocks=2, dropout=0.1
-    )
-    x = torch.randn(batch_size, 1, 64)
-    t = torch.randint(1000, (batch_size,))
-    y = model(x, t)
-    print("test input size \t[Batch,Channels,Length] is ", list(x.shape))
-    print("output size \t\t[Batch,Channels,Length] is ", list(y.shape))
+class WrappedUNet(nn.Module):
+    def __init__(self, model, T):
+        super(WrappedUNet, self).__init__()
+        self.model = model
+        self.T = T  # 传入时间步长范围
 
+    def forward(self, x):
+        x = x.double()
+        batch_size = x.shape[0]
+        t = torch.randint(self.T, (batch_size,), device=x.device, dtype=torch.int)  # 生成随机 t
+        return self.model(x, t).double()  # 传入原始 UNet
+
+
+if __name__ == "__main__":
+    ...
 
 # ?点扩散函数，可以从像素点提取吗？
 # *可以

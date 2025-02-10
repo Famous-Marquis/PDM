@@ -1,4 +1,8 @@
-DDPM_data/
-cache/
+DDPM_data/*
+cache/*
 .vscode/
 Checkpoints/ckpt_*
+Image/*
+SampledImgs/*
+Record/*
+TURBULENCE/cache/*

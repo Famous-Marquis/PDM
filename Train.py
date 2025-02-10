@@ -1,20 +1,20 @@
-import pandas as pd
-from torchvision.utils import save_image
-from pyexpat import model
-from warmup_scheduler import GradualWarmupScheduler
-from torchvision import transforms
-import numpy as np
-from typing import Dict
-import torch
-from torch.utils.data import Dataset, DataLoader
 import os
-from generate_data import generate_data
-import warmup_scheduler
+from typing import Dict
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import torch
+import torch.optim as optim
+from torch.utils.data import Dataset, DataLoader
+from tqdm import tqdm
+from warmup_scheduler import GradualWarmupScheduler
+
 from Diffusion import GaussianDiffusionSampler, GaussianDiffusionTrainer
 from Model import UNet
-import torch.optim as optim
-from tqdm import tqdm
+from aberration import ZERNIKE_NUMS, PhaseScreen, CACHE_DIR
 from draw_record import save_plt_img_config
+from generate_data import generate_data
 
 
 class NumpyDataset(Dataset):
@@ -107,6 +107,7 @@ def train(model_config: Dict):
     loss_var_per_epoch = []
     # 开始训练
     generate_data(
+        Dr0_range=model_config["Dr0_range"],
         length_per_Dr0=model_config["data_length_per_Dr0"],
         nums_Dr0=model_config["nums_Dr0"],
     )
@@ -172,8 +173,8 @@ def train(model_config: Dict):
             # "model_config": model_config,
         }
         df = pd.DataFrame(record_dict)
-        df.to_pickle("./Record/record.pkl")
-        save_plt_img_config("./Record/record.pkl")
+        df.to_pickle("./Record/28.pkl")
+        save_plt_img_config("Record/28.pkl")
 
 
 def eval(model_config: Dict):
@@ -184,7 +185,7 @@ def eval(model_config: Dict):
             ch=model_config["channel"],
             ch_mult=model_config["channel_mult"],
             attn=model_config["attn"],
-            nums_resblocks=model_config["nums_res_blocks"],
+            nums_resblocks=model_config["num_res_blocks"],
             dropout=model_config["dropout"],
         )
         ckpt = torch.load(
@@ -194,26 +195,60 @@ def eval(model_config: Dict):
             map_location=device,
         )
         model.load_state_dict(ckpt)
-        print("model load weight done")
+        print("model load weight done, \n load_state:{}".format(model_config["test_load_weight"]))
         model.eval()
         sampler = GaussianDiffusionSampler(
             model, model_config["beta_1"], model_config["beta_T"], model_config["T"]
         ).to(device)
-        noisyImage = torch.randn(
-            size=[model_config["batch_size"], 1, 64],
-        )
-        saveNoise = torch.clamp(noisyImage * 0.5 + 0.5, 0, 1)
-        save_image(
-            saveNoise,
-            os.path.join(
-                model_config["sampled_dir"], model_config["sampledNoisyImgName"]
-            ),
-            nrow=model_config["nrow"],
-        )
-        sampledImgs = sampler(noisyImage)
-        sampledImgs = sampledImgs * 0.5 + 0.5
-        save_image(
-            sampledImgs,
-            os.path.join(model_config["sampled_dir"], model_config["sampledImgName"]),
-            nrow=model_config["nrow"],
-        )
+        ##
+        sample_nums = 100
+        noisy_coeffs = torch.randn(
+            size=[sample_nums, 1, ZERNIKE_NUMS],
+        ).to(device)
+        # saveNoise = torch.clamp(noisy_coeffs * 0.5 + 0.5, 0, 1)
+        # save_image(
+        #     saveNoise,
+        #     os.path.join(
+        #         model_config["sampled_dir"], model_config["sampledNoisyImgName"]
+        #     ),
+        #     nrow=model_config["nrow"],
+        # )
+        sampled_coeffs = sampler(noisy_coeffs)
+        # sampledImgs = sampledImgs * 0.5 + 0.5
+        sampled_coeffs = sampled_coeffs.cpu()
+        sampled_coeffs = sampled_coeffs.numpy()
+        assert sampled_coeffs.shape[2] == ZERNIKE_NUMS
+        ps = PhaseScreen(256, ZERNIKE_NUMS, cache_dir=CACHE_DIR)
+        z_coes_array = np.zeros([sampled_coeffs.shape[0], sampled_coeffs.shape[2]])
+        fig, axs = plt.subplots(2, 3, figsize=(16, 6))
+        for i, z_coes in enumerate(sampled_coeffs):
+            z_coes_array[i] = z_coes[0]
+
+            if i < 6:
+                ax = axs.flat[i]
+                # ps.set_zernike_coeffients(list(z_coes[0]))
+                im = ax.imshow(z_coes, aspect="auto", cmap=plt.get_cmap("viridis"))
+                plt.colorbar(im, ax=ax)
+        plt.title("real_data")
+        plt.tight_layout()
+        plt.savefig("./SampledImgs/sample.jpg")
+        plt.close(fig)
+        fig, axs = plt.subplots(2, 3, figsize=(16, 6))
+        for ax in axs.flat:
+            ps.simulate_turbulence(1)
+            coeff = ps.get_coeffients()
+            coeff = np.array(coeff)
+            coeff=coeff[None,:]
+            im = ax.imshow(coeff, aspect="auto", cmap=plt.get_cmap("viridis"))
+            plt.colorbar(im, ax=ax)
+        plt.title("sampled_data")
+        plt.tight_layout()
+        plt.savefig("./SampledImgs/real.jpg")
+        plt.close(fig)
+
+        return z_coes_array
+        # save_image(
+        #     sampledImgs,
+        #     os.path.join(model_config["sampled_dir"], model_config["sampledImgName"]),
+        #     nrow=model_config["nrow"],
+        # )

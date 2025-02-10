@@ -2,8 +2,7 @@
 默认支持400维zernike系数
 ZM和ZN是zernike系数的索引，其中ZM的索引有两种表示方式，根据需要取用
 """
-
-cache_dir = "TURBULENCE/cache/"
+CACHE_DIR="./cache"
 ZERNIKE_NUMS = 64
 ZN = [
     0,
@@ -1215,7 +1214,7 @@ ZM = [
 ]
 from typing import Literal
 import numpy as np
-from matlab import meshgrid, cart2pol, ft2, ift2, randn
+from TURBULENCE.matlab import meshgrid, cart2pol, ft2, ift2, randn
 import matplotlib.pyplot as plt
 from scipy import optimize
 from math import factorial
@@ -1232,20 +1231,19 @@ def GenerateZnAndZm(z_num=ZERNIKE_NUMS):
         # print('index {}, n:{}, m:{}'.format(k, n, m))
         return k + 1
 
-    while True:
-        for m in range(n + 1):
-            if n >= m and abs(n - m) % 2 == 0:
-                if m == 0:
-                    k = append_nm(n, m, k)
-                    if k >= z_num:
-                        return N, M
-                else:
-                    k = append_nm(n, m, k)
-                    if k >= z_num:
-                        return N, M
-                    k = append_nm(n, m, k)
-                    if k >= z_num:
-                        return N, M
+    for m in range(n + 1):
+        if n >= m and abs(n - m) % 2 == 0:
+            if m == 0:
+                k = append_nm(n, m, k)
+                if k >= z_num:
+                    return N, M
+            else:
+                k = append_nm(n, m, k)
+                if k >= z_num:
+                    return N, M
+                k = append_nm(n, m, k)
+                if k >= z_num:
+                    return N, M
         n += 1
     return ZN, ZM
 
@@ -1276,7 +1274,7 @@ def FtPhaseScreen(Dr0, N, L0=float("inf"), l0=0):
     f0 = 1 / L0
 
     PSD_phi = (
-        0.023 * r0 ** (-5 / 3) * np.exp(-((f / fm) ** 2)) / (f**2 + f0**2) ** (11 / 6)
+            0.023 * r0 ** (-5 / 3) * np.exp(-((f / fm) ** 2)) / (f ** 2 + f0 ** 2) ** (11 / 6)
     )
     PSD_phi[int(N / 2), int(N / 2)] = 0
 
@@ -1294,7 +1292,7 @@ def FtShPhaseScreen(Dr0, N, L0=float("inf"), l0=0):
     phz_lo = np.zeros([N, N])
 
     for p in range(3):
-        del_f = 1 / (3**p * D)
+        del_f = 1 / (3 ** p * D)
     # TODO : finish this
     pass
 
@@ -1312,7 +1310,7 @@ def ZernikePoly(i, r=None, theta=None):
         for s in range((n - m) // 2 + 1):
             num = (-1) ** s * factorial(n - s)
             denom = (
-                factorial(s) * factorial((n + m) // 2 - s) * factorial((n - m) // 2 - s)
+                    factorial(s) * factorial((n + m) // 2 - s) * factorial((n - m) // 2 - s)
             )
             R = R + num / denom * (r ** (n - 2 * s))
 
@@ -1329,19 +1327,12 @@ def ZernikePoly(i, r=None, theta=None):
 
 
 ## 计算Zernike系数
-def NollZernikeCoeffients(z_num=ZERNIKE_NUMS, dr0=7):
-    """
-    计算Zernike系数
-
-    Return
-    --------------
-    list : dtype=float64
-    """
+def noll_zernike_coeffients(z_num=ZERNIKE_NUMS, Dr0=7):
     import scipy.special as S
     from numpy import linalg as la
 
     n = ZN[:z_num]
-    m = ZM_[:z_num]
+    m = ZM[:z_num]
     nn = n
     mm = m
     C = np.zeros([len(n), len(m)])
@@ -1349,22 +1340,24 @@ def NollZernikeCoeffients(z_num=ZERNIKE_NUMS, dr0=7):
         for j in range(1, len(m)):
             if m[i] == mm[j]:
                 k = (
-                    2.2698
-                    * pow(-1, int((n[i] + nn[j] - 2 * m[i]) / 2))
-                    * pow((n[i] + 1) * (nn[j] + 1), 0.5)
+                        2.2698
+                        * pow(-1, int((n[i] + nn[j] - 2 * n[i]) / 2))
+                        * pow((n[i] + 1) * (nn[j] + 1), 0.5)
                 )
+                A = S.gamma(14 / 3)
                 a = S.gamma((n[i] + nn[j] - 5 / 3) / 2)
+                B = pow(2, 14 / 3)
                 b = S.gamma((n[i] - nn[j] + 17 / 3) / 2)
                 c = S.gamma((nn[j] - n[i] + 17 / 3) / 2)
-                dd = S.gamma((n[i] + nn[j] + 23 / 3) / 2)
-                C[i, j] = pow(dr0, 5 / 3) * k * a / b / c / dd
+                d = S.gamma((n[i] + nn[j] + 23 / 3) / 2)
+                C[i, j] = pow(Dr0, 5 / 3) * k * a * A / b / c / d / B
             else:
                 C[i, j] = 0
                 continue
     u, s, v = la.svd(C[1:, 1:])
     rand = np.random.normal(size=z_num - 1)
     B = np.sqrt(s) * rand
-    A = np.dot(v, B)
+    A = np.dot(u, B)
 
     zernike = []
     one = np.array([1])
@@ -1378,27 +1371,27 @@ class PhaseScreen:
     """
     Parameter
     ---------------
-    N : int
+    N:
         pixels
-    znum : int
+    znum:
         Zernike Order
     """
 
-    def __init__(self, N=256, znum=ZERNIKE_NUMS, cache_dir="TURBULENCE/cache/"):
+    def __init__(self, N=256, znum=ZERNIKE_NUMS, cache_dir=CACHE_DIR):
         self.N = N
         self.znum = znum
         self.x, self.y = meshgrid(np.linspace(-1, 1, N))
         self.theta, self.r = cart2pol(self.x, self.y)
         self._z_coes = [0 for _ in range(znum)]
-        self._scr = np.zeros([N, N], dtype=np.float64)
+        self._scr = np.zeros([N, N])
         try:
             if not os.path.exists(cache_dir):
                 os.makedirs(cache_dir)
-            cache_path = os.path.join(cache_dir, "zpoly" + str(N) + ".npy")
+            cache_path = os.path.join(cache_dir, "zpoly_" + str(znum) + "_" + str(N) + ".npy")
             self._zpolys = np.load(cache_path)
             assert N == self._zpolys[0].shape[0] == self._zpolys[0].shape[1]
         except:
-            print("load cache file fails, init zpolys all over")
+            print("load cache file fails, init zpolys all over:\n znum={},N={}".format(znum,N))
             self._zpolys = []
             for i in range(znum):
                 self._zpolys.append(ZernikePoly(i, self.r, self.theta))
@@ -1470,13 +1463,17 @@ class PhaseScreen:
     def update_screen(self):
         """更新相位屏."""
         scr = np.zeros([self.N, self.N])
-        assert len(self._z_coes) == len(self._zpolys) == self.znum
+        assert (
+                len(self._z_coes) == len(self._zpolys) == self.znum
+        ), "len(_z_coes)={},len(_zploys)={},znum={}".format(
+            len(self._z_coes), len(self._zpolys), self.znum
+        )
         for i in range(self.znum):
             scr += self._z_coes[i] * self._zpolys[i]
         self._scr = scr
         return self
 
-    def simulate_turbulence(self, Dr0, method: Literal["ft", "zernike"] = "ft"):
+    def simulate_turbulence(self, Dr0, method: Literal["ft", "zernike"] = "zernike"):
         """
         进行大气湍流仿真,生成相位屏.
 
@@ -1493,7 +1490,7 @@ class PhaseScreen:
             self.fit(scr)
             self.update_screen()
         elif method == "zernike":
-            z = NollZernikeCoeffients(z_num=self.znum, dr0=Dr0)
+            z = noll_zernike_coeffients(z_num=self.znum, Dr0=Dr0)
             self.set_zernike_coeffients(z, update_scr=True)
         else:
             raise NotImplementedError
@@ -1553,7 +1550,7 @@ class PhaseScreen:
         fig = plt.figure(figsize=(12, 8), dpi=dpi)
 
         # 获取图形的轴，并设置为3D投影
-        ax = fig.gca(projection="3d")  # type:ignore
+        ax = fig.gca(projection="3d")
 
         # 生成X和Y轴的值，用于创建网格
         X = np.linspace(-1, 1, 224)
@@ -1623,7 +1620,7 @@ class PhaseScreen:
         k,f : 滤镜参数
         """
         # lens = np.exp(-1j*k/(2*f)*(self.r**2))
-        lens = k / (2 * f) * (self.r**2)
+        lens = k / (2 * f) * (self.r ** 2)
         self._scr = self.get_screen() + lens
         return self
 
@@ -1637,9 +1634,6 @@ class PhaseScreen:
 
 if __name__ == "__main__":
     N = 256
-    # ph = FtPhaseScreen(1, N)
-    ps = PhaseScreen()
-    ps.simulate_turbulence(10, "zernike")
-    z_coes = ps.get_coeffients()
-    print(len(z_coes))
-    print(z_coes)
+    ph = FtPhaseScreen(1, N)
+    z = PhaseScreen(N=64)
+    z.fit(ph)
