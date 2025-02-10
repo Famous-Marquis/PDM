@@ -6,3 +6,4 @@ Image/*
 SampledImgs/*
 Record/*
 TURBULENCE/cache/*
+!null.txt
