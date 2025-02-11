@@ -7,7 +7,7 @@ from torch.nn import init
 
 from model_config import MODEL_CONFIG
 
-GROUPDIVIDE = 2
+GROUPDIVIDE = MODEL_CONFIG["batch_size"] / 2
 
 
 # B,C,H,W
@@ -23,9 +23,11 @@ class SeqAttnBlock(nn.Module):
         self.k_proj = nn.Conv1d(in_ch, in_ch, 1, stride=1, padding=0)
         self.v_proj = nn.Conv1d(in_ch, in_ch, 1, stride=1, padding=0)
         ############################
-        if MODEL_CONFIG["group_norm"]:
+        if MODEL_CONFIG["norm"] == "GroupNorm":
             self.norm = nn.GroupNorm(GROUPDIVIDE, in_ch)
-        else:
+        elif MODEL_CONFIG["norm"] == "BatchNorm":
+            self.norm = nn.BatchNorm1d(in_ch)
+        elif MODEL_CONFIG["norm"] is None:
             self.norm = None
         ############################
         self.proj = nn.Conv1d(in_ch, in_ch, 1, stride=1, padding=0)
@@ -72,31 +74,28 @@ class SeqAttnBlock(nn.Module):
 class ResBlock(nn.Module):
     def __init__(self, in_ch, out_ch, tdim, dropout, attn=False):
         super().__init__()
-        if MODEL_CONFIG["group_norm"]:
-            self.block1 = nn.Sequential(
-                nn.GroupNorm(GROUPDIVIDE, in_ch),
-                Swish(),
-                nn.Conv1d(in_ch, out_ch, 3, stride=1, padding=1),
-            )
-        else:
-            self.block1 = nn.Sequential(
-                Swish(),
-                nn.Conv1d(in_ch, out_ch, 3, stride=1, padding=1),
-            )
+        self.block1 = nn.Sequential()
+        if MODEL_CONFIG["norm"] == "GroupNorm":
+            self.block1.add_module("GroupNorm", nn.GroupNorm(GROUPDIVIDE, in_ch))
+        elif MODEL_CONFIG["norm"] == "BatchNorm":
+            self.block1.add_module("BatchNorm", nn.BatchNorm1d(in_ch))
+        elif MODEL_CONFIG["norm"] is None:
+            ...
+        self.block1.add_module("Swish", Swish())
+        self.block1.add_module("Conv1d", nn.Conv1d(in_ch, out_ch, 3, stride=1, padding=1), )
+
         self.temb_proj = nn.Sequential(Swish(), nn.Linear(tdim, out_ch))
         # ?time_embedding 的输出？？
-        if MODEL_CONFIG["group_norm"]:
-            self.block2 = nn.Sequential(
-                nn.GroupNorm(GROUPDIVIDE, out_ch),
-                Swish(),
-                nn.Dropout(dropout),
-                nn.Conv1d(out_ch, out_ch, 3, stride=1, padding=1),
-            )
-        else:
-            self.block2 = nn.Sequential(
-                Swish(),
-                nn.Dropout(dropout),
-                nn.Conv1d(out_ch, out_ch, 3, stride=1, padding=1), )
+        self.block2 = nn.Sequential()
+        if MODEL_CONFIG["norm"] == "GroupNorm":
+            self.block2.add_module("GroupNorm", nn.GroupNorm(GROUPDIVIDE, out_ch))
+        elif MODEL_CONFIG["norm"] == "BatchNorm":
+            self.block2.add_module("BatchNorm", nn.BatchNorm1d(out_ch))
+        elif MODEL_CONFIG["norm"] is None:
+            ...
+        self.block2.add_module("Dropout", nn.Dropout(dropout))
+        self.block2.add_module("Swish", Swish())
+        self.block2.add_module("Conv1d", nn.Conv1d(out_ch, out_ch, 3, stride=1, padding=1), )
         if in_ch != out_ch:
             self.shortcut = nn.Conv1d(in_ch, out_ch, 1, padding=0)
         else:
@@ -254,17 +253,15 @@ class UNet(nn.Module):
                 self.upblocks.append(UpSample(now_ch))
 
         assert len(chs) == 0
-        if MODEL_CONFIG["group_norm"]:
-            self.tail = nn.Sequential(
-                nn.GroupNorm(GROUPDIVIDE, now_ch),
-                Swish(),
-                nn.Conv1d(now_ch, 1, 3, stride=1, padding=1),
-            )
-        else:
-            self.tail = nn.Sequential(
-                Swish(),
-                nn.Conv1d(now_ch, 1, 3, stride=1, padding=1),
-            )
+        self.tail = nn.Sequential()
+        if MODEL_CONFIG["norm"] == "GroupNorm":
+            self.tail.add_module("GroupNorm", nn.GroupNorm(GROUPDIVIDE, now_ch))
+        elif MODEL_CONFIG["norm"] == "BatchNorm":
+            self.tail.add_module("BatchNorm", nn.BatchNorm1d(now_ch))
+        elif MODEL_CONFIG["norm"] is None:
+            ...
+        self.tail.add_module("Swish", Swish())
+        self.tail.add_module("Conv1d",nn.Conv1d(now_ch, 1, 3, stride=1, padding=1))
         self.initialize()
         # summary(self,(300,1,ZERNIKE_NUMS))
 

@@ -64,7 +64,7 @@ def batch_cos_sim(A, B):
     norm_B = np.linalg.norm(B, axis=1)
     assert norm_A.shape==(100,),"norm_A:".format(norm_A.shape)
     cos_sim = dot_product / (norm_A * norm_B)
-    return cos_sim.mean()
+    return cos_sim[:5]
 
 
 # TODO:在训练期间，增加指标评估，用于监控训练
@@ -273,7 +273,9 @@ def eval(model_config: Dict):
         assert real_coes.shape == np.squeeze(sampled_coeffs).shape, "形状不同,real:{},sampled:{}".format(
             real_coes.shape, np.squeeze(sampled_coeffs).shape)
         cos_sim = batch_cos_sim(real_coes, sampled_coeffs)
-        print("生成数据与原始样本的余弦相似度：\n{}".format(cos_sim))
+        print("生成数据与原始样本的余弦相似度 \n[10个为例]：")
+        for i,item in enumerate(cos_sim[:10]):
+            print(i,":", item)
         return sampled_coes
         # save_image(
         #     sampledImgs,

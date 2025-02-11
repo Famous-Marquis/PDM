@@ -16,8 +16,7 @@ MODEL_CONFIG = {
         4
     ],  # 其长度决定了UNet的层数; 第X层UNet每次采样后的通道数 = channel_mult*channel.
     "attn": [0, 1, 2],  # UNet中,哪几个层使用注意力机制,索引从0开始
-    "group_norm":True, # 模型中，是否包含归一化层： True or False
-    # TODO: BatchNorm选项
+    "norm":"BatchNorm", # 归一化层选项： "BatchNorm" or "GroupNorm" or None
     "num_res_blocks": 2,  # UNet每层,由几个残差块构成
     "dropout": 0.15,  # 训练时的Dropout比率
     "loss_func":"Cos",# "MSE" or "Cos" or "Was" or "MAE"
