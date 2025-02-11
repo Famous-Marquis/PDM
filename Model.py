@@ -1,11 +1,11 @@
 import math
+
 import torch
 import torch.nn as nn
-from torch.nn import init
 from torch.nn import functional as F
-from torchsummary import summary
+from torch.nn import init
 
-from aberration import ZERNIKE_NUMS
+from model_config import MODEL_CONFIG
 
 GROUPDIVIDE = 2
 
@@ -23,7 +23,10 @@ class SeqAttnBlock(nn.Module):
         self.k_proj = nn.Conv1d(in_ch, in_ch, 1, stride=1, padding=0)
         self.v_proj = nn.Conv1d(in_ch, in_ch, 1, stride=1, padding=0)
         ############################
-        # self.norm = nn.GroupNorm(GROUPDIVIDE, in_ch)
+        if MODEL_CONFIG["group_norm"]:
+            self.norm = nn.GroupNorm(GROUPDIVIDE, in_ch)
+        else:
+            self.norm = None
         ############################
         self.proj = nn.Conv1d(in_ch, in_ch, 1, stride=1, padding=0)
         self.initialize()
@@ -36,8 +39,10 @@ class SeqAttnBlock(nn.Module):
 
     def forward(self, x):
         B, C, L = x.shape
-        # h = self.norm(x)
-        h=x
+        if self.norm is not None:
+            h = self.norm(x)
+        else:
+            h = x
         q = self.q_proj(h)
         k = self.k_proj(h)
         v = self.v_proj(h)
@@ -67,19 +72,31 @@ class SeqAttnBlock(nn.Module):
 class ResBlock(nn.Module):
     def __init__(self, in_ch, out_ch, tdim, dropout, attn=False):
         super().__init__()
-        self.block1 = nn.Sequential(
-            # nn.GroupNorm(GROUPDIVIDE, in_ch),
-            Swish(),
-            nn.Conv1d(in_ch, out_ch, 3, stride=1, padding=1),
-        )
+        if MODEL_CONFIG["group_norm"]:
+            self.block1 = nn.Sequential(
+                nn.GroupNorm(GROUPDIVIDE, in_ch),
+                Swish(),
+                nn.Conv1d(in_ch, out_ch, 3, stride=1, padding=1),
+            )
+        else:
+            self.block1 = nn.Sequential(
+                Swish(),
+                nn.Conv1d(in_ch, out_ch, 3, stride=1, padding=1),
+            )
         self.temb_proj = nn.Sequential(Swish(), nn.Linear(tdim, out_ch))
         # ?time_embedding 的输出？？
-        self.block2 = nn.Sequential(
-            # nn.GroupNorm(GROUPDIVIDE, out_ch),
-            Swish(),
-            nn.Dropout(dropout),
-            nn.Conv1d(out_ch, out_ch, 3, stride=1, padding=1),
-        )
+        if MODEL_CONFIG["group_norm"]:
+            self.block2 = nn.Sequential(
+                nn.GroupNorm(GROUPDIVIDE, out_ch),
+                Swish(),
+                nn.Dropout(dropout),
+                nn.Conv1d(out_ch, out_ch, 3, stride=1, padding=1),
+            )
+        else:
+            self.block2 = nn.Sequential(
+                Swish(),
+                nn.Dropout(dropout),
+                nn.Conv1d(out_ch, out_ch, 3, stride=1, padding=1), )
         if in_ch != out_ch:
             self.shortcut = nn.Conv1d(in_ch, out_ch, 1, padding=0)
         else:
@@ -237,12 +254,17 @@ class UNet(nn.Module):
                 self.upblocks.append(UpSample(now_ch))
 
         assert len(chs) == 0
-
-        self.tail = nn.Sequential(
-            # nn.GroupNorm(GROUPDIVIDE, now_ch),
-            Swish(),
-            nn.Conv1d(now_ch, 1, 3, stride=1, padding=1),
-        )
+        if MODEL_CONFIG["group_norm"]:
+            self.tail = nn.Sequential(
+                nn.GroupNorm(GROUPDIVIDE, now_ch),
+                Swish(),
+                nn.Conv1d(now_ch, 1, 3, stride=1, padding=1),
+            )
+        else:
+            self.tail = nn.Sequential(
+                Swish(),
+                nn.Conv1d(now_ch, 1, 3, stride=1, padding=1),
+            )
         self.initialize()
         # summary(self,(300,1,ZERNIKE_NUMS))
 

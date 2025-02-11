@@ -15,6 +15,7 @@ from Model import UNet
 from aberration import ZERNIKE_NUMS, PhaseScreen, CACHE_DIR
 from draw_record import save_plt_img_config
 from generate_data import generate_data
+from model_config import MODEL_CONFIG
 
 
 class NumpyDataset(Dataset):
@@ -53,6 +54,20 @@ class PandasDataset(Dataset):
         else:
             item = sample
         return item  # .to(device=self.device)
+
+
+def batch_cos_sim(A, B):
+    B=np.squeeze(B)
+    assert A.shape == B.shape
+    dot_product = np.sum(A * B, axis=1)
+    norm_A = np.linalg.norm(A, axis=1)
+    norm_B = np.linalg.norm(B, axis=1)
+    assert norm_A.shape==(100,),"norm_A:".format(norm_A.shape)
+    cos_sim = dot_product / (norm_A * norm_B)
+    return cos_sim.mean()
+
+
+# TODO:在训练期间，增加指标评估，用于监控训练
 
 
 def train(model_config: Dict):
@@ -136,9 +151,9 @@ def train(model_config: Dict):
         # //由于样本集太小，每次迭代后将重新生成样本集
         with tqdm(dataloader, dynamic_ncols=True) as tqdm_dataloader:
             losses = []
-            for images in tqdm_dataloader:
+            for coeff in tqdm_dataloader:
                 optimizer.zero_grad()
-                x_0 = images.double().to(device)
+                x_0 = coeff.double().to(device)
                 loss = trainer(x_0).sum()
                 loss.backward()
                 torch.nn.utils.clip_grad.clip_grad_norm_(
@@ -178,7 +193,7 @@ def train(model_config: Dict):
 
 
 def eval(model_config: Dict):
-    with torch.no_grad():
+    with (torch.no_grad()):
         device = torch.device(model_config["device"])
         model = UNet(
             T=model_config["T"],
@@ -219,34 +234,47 @@ def eval(model_config: Dict):
         sampled_coeffs = sampled_coeffs.numpy()
         assert sampled_coeffs.shape[2] == ZERNIKE_NUMS
         ps = PhaseScreen(256, ZERNIKE_NUMS, cache_dir=CACHE_DIR)
-        z_coes_array = np.zeros([sampled_coeffs.shape[0], sampled_coeffs.shape[2]])
+        sampled_coes = np.zeros([sampled_coeffs.shape[0], sampled_coeffs.shape[2]])
         fig, axs = plt.subplots(2, 3, figsize=(16, 6))
         for i, z_coes in enumerate(sampled_coeffs):
-            z_coes_array[i] = z_coes[0]
+            sampled_coes[i] = z_coes[0]
 
             if i < 6:
                 ax = axs.flat[i]
                 # ps.set_zernike_coeffients(list(z_coes[0]))
                 im = ax.imshow(z_coes, aspect="auto", cmap=plt.get_cmap("viridis"))
+                ax.set_yticks([])
                 plt.colorbar(im, ax=ax)
-        plt.title("real_data")
+        fig.suptitle("sampled_data")
         plt.tight_layout()
         plt.savefig("./SampledImgs/sample.jpg")
         plt.close(fig)
         fig, axs = plt.subplots(2, 3, figsize=(16, 6))
         for ax in axs.flat:
-            ps.simulate_turbulence(1)
+            ps.simulate_turbulence(MODEL_CONFIG["Dr0_range"])
             coeff = ps.get_coeffients()
             coeff = np.array(coeff)
-            coeff=coeff[None,:]
+            coeff = coeff[None, :]
             im = ax.imshow(coeff, aspect="auto", cmap=plt.get_cmap("viridis"))
+            ax.set_yticks([])
             plt.colorbar(im, ax=ax)
-        plt.title("sampled_data")
+        fig.suptitle("real_data")
         plt.tight_layout()
         plt.savefig("./SampledImgs/real.jpg")
         plt.close(fig)
 
-        return z_coes_array
+        real_coes = np.zeros([sampled_coeffs.shape[0], sampled_coeffs.shape[2]])
+        for i in range(sample_nums):
+            ps.simulate_turbulence(MODEL_CONFIG["Dr0_range"])
+            coeff = ps.get_coeffients()
+            coeff = np.array(coeff)[None, :]
+            real_coes[i] = coeff[0]
+
+        assert real_coes.shape == np.squeeze(sampled_coeffs).shape, "形状不同,real:{},sampled:{}".format(
+            real_coes.shape, np.squeeze(sampled_coeffs).shape)
+        cos_sim = batch_cos_sim(real_coes, sampled_coeffs)
+        print("生成数据与原始样本的余弦相似度：\n{}".format(cos_sim))
+        return sampled_coes
         # save_image(
         #     sampledImgs,
         #     os.path.join(model_config["sampled_dir"], model_config["sampledImgName"]),

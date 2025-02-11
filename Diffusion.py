@@ -3,6 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as functional
 from tqdm import tqdm
 
+from model_config import MODEL_CONFIG
+
 
 def extract(v: torch.Tensor, t: torch.Tensor, x_shape):
     """
@@ -24,7 +26,7 @@ class GaussianDiffusionTrainer(nn.Module):
         self.T = T
 
         self.register_buffer("beta", torch.linspace(beta_1, beta_T, T).double())
-        # TODO:尝试余弦调度的β值
+        # TODO: 尝试余弦调度的β值
         self.beta: torch.Tensor
         alpha = 1 - self.beta
         alpha_bar = torch.cumprod(alpha, dim=0)
@@ -41,10 +43,19 @@ class GaussianDiffusionTrainer(nn.Module):
                       extract(self.sqrt_alpha_bar, t, x_0.shape) * x_0
                       + extract(self.sqrt_one_minus_alpha_bar, t, x_0.shape)
               ) * eps
-        loss = (
-                functional.mse_loss(self.model(x_t, t), eps, reduction="none")
-                / x_0.shape[0]
-        )
+        if MODEL_CONFIG["loss_func"] == "MSE":
+            loss = (
+                functional.mse_loss(self.model(x_t, t), eps, reduction="mean")
+            )
+        elif MODEL_CONFIG["loss_func"] == "Cos":
+            loss_f = nn.CosineEmbeddingLoss(margin=0.01, reduction="mean")
+            loss = 1 - loss_f(self.model(x_t, t).squeeze(1), eps.squeeze(1),
+                              target=torch.ones(x_0.shape[0], device=x_0.device))
+        elif MODEL_CONFIG["loss_func"] == "Was":
+            loss=abs(torch.mean(self.model(x_0, t))-torch.mean(eps))
+        elif MODEL_CONFIG["loss_func"] == "MAE":
+            loss_f=nn.L1Loss()
+            loss=loss_f(self.model(x_0, t), eps)
         return loss
 
 
