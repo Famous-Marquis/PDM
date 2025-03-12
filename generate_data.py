@@ -204,5 +204,5 @@ def generate_data(length_per_Dr0, nums_Dr0, Dr0_range, parallel_processors=2, Dr
 
 
 if __name__ == "__main__":
-    generate_data(length_per_Dr0=25, nums_Dr0=12)
+    generate_data(length_per_Dr0=250, nums_Dr0=12,Dr0_range=1)
     # gen_data((25, 1, [5, 6], 1, 1))
