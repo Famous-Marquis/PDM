@@ -1292,7 +1292,7 @@ def FtShPhaseScreen(Dr0, N, L0=float("inf"), l0=0):
 
     for p in range(3):
         del_f = 1 / (3 ** p * D)
-    # TODO : finish this: 子谐波补充相位屏低频分量
+    # (忽视)TODO : 子谐波补充相位屏低频分量
     pass
 
 

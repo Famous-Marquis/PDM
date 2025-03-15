@@ -1,16 +1,18 @@
 import os
-import warnings
 
 import numpy as np
 import pandas
 import tensorflow as tf
 from matplotlib import pyplot as plt
+from scipy.linalg import sqrtm
 from tensorflow import keras
 
-from Diffusion import GaussianDiffusion
+from Diffusion import DDPM
 from Model import FCMean, FCCov
 from aberration import ZERNIKE_NUMS
-from scipy.linalg import sqrtm
+from generate_data import generate_data
+from plot_struct import plot_struct
+
 
 def Frechet_distance(x, y, epsilon=1e-6):
     def calculate_mean_cov(z):
@@ -64,7 +66,7 @@ def Frechet_distance(x, y, epsilon=1e-6):
 class DDPMMonitor(keras.callbacks.Callback):
     def __init__(self, real_data, model_checkpoint_path):
         self.real_data = real_data
-        self.model: GaussianDiffusion
+        self.model: DDPM
         self.fds = []
         self.model_checkpoint_path = model_checkpoint_path
 
@@ -92,14 +94,28 @@ class DDPMMonitor(keras.callbacks.Callback):
         plt.plot(self.fds)
         plt.xlabel('epoch ')
         plt.ylabel("Frechet distance")
+        # plt.savefig("./Record/FD-epoch.png")
         plt.show()
-        plt.savefig("./Record/FD-epoch.png")
+        plt.close(fig1)
+        maxlen = min(100, self.real_data.shape[0])
         #  绘制反向扩散过程
-        x_T = tf.random.normal(shape=(100, ZERNIKE_NUMS))
-        x_0 = self.model.show_denoise(x_T)
-
-        # todo：绘制结构函数，并选择指标，计算二者相似度
-
+        x_T = tf.random.normal(shape=(maxlen, ZERNIKE_NUMS))
+        x_0_eval = self.model.show_denoise(x_T)
+        x_0_eval = x_0_eval.numpy()
+        # 绘制结构函数
+        Dphi_1d_mean_eval,r_over_r0_eval=plot_struct(x_0_eval)
+        Dphi_1d_mean,r_over_r0=plot_struct(self.real_data[:maxlen])
+        fig2 = plt.figure(figsize=(6,4))
+        plt.plot(r_over_r0, Dphi_1d_mean, 'bo-', label='data $D_\phi(r)$')
+        plt.plot(r_over_r0_eval, Dphi_1d_mean_eval, 'ro-', label='sampled $D_\phi(r)$')
+        plt.xlabel(r'$r / r_0$')
+        plt.ylabel(r'$D_\phi(r)$')
+        plt.title('1D radial structure function')
+        plt.grid(True)
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig("./SampledImgs/struct.png",dpi=300)
+        # todo: 随机绘制多个原始样本与生成样本
 
 class DDPMTrainer:
 
@@ -122,15 +138,15 @@ class DDPMTrainer:
 
     def _build_ddpm(self):
         model, model_v = self._build_model()
-        return GaussianDiffusion(model=model, model_v=model_v,
-                                 beta_1=self.model_config["beta_1"],
-                                 beta_T=self.model_config["beta_T"], T=self.model_config["T"],
-                                 cosine_schedule=self.model_config["cosine_schedule"], )
+        return DDPM(model=model, model_v=model_v,
+                    beta_1=self.model_config["beta_1"],
+                    beta_T=self.model_config["beta_T"], T=self.model_config["T"],
+                    cosine_schedule=self.model_config["cosine_schedule"], )
 
     def _load_weights(self):
         if self.model_config["load_weights"]:
             if os.path.exists(self.model_checkpoint_path + ".index"):
-            # if os.path.exists(self.model_checkpoint_path):
+                # if os.path.exists(self.model_checkpoint_path):
                 try:
                     self.ddpm.load_weights(self.model_checkpoint_path)
                 except Exception as e:
@@ -150,11 +166,15 @@ class DDPMTrainer:
             plt.plot(loss_epoch)
             plt.xlabel('epoch')
             plt.ylabel('loss')
-            # plt.show()
-            plt.savefig("./Record/loss_epoch.png")
+            plt.show()
+            # plt.savefig("./Record/loss_epoch.png")
             plt.close(fig)
 
     def load_data(self, batch_size):
+        if self.model_config["generate_new_data"]:
+            generate_data(length_per_Dr0=self.model_config["length_per_Dr0"],
+                          nums_Dr0=self.model_config["nums_Dr0"],
+                          Dr0_range=self.model_config["Dr0_range"], )
         data_series = pandas.read_pickle(self.data_path)
         data_matrix = np.stack(data_series).astype(np.float32)
         dataset = tf.data.Dataset.from_tensor_slices(data_matrix)

@@ -38,10 +38,10 @@ def extract(v, t, x_shape):
     return out
 
 
-class GaussianDiffusion(keras.Model):
+class DDPM(keras.Model):
     def __init__(self, model: keras.Model, beta_1, beta_T, T, cosine_schedule=False,
                  predict_cov=False, model_v=None, ):
-        super(GaussianDiffusion, self).__init__()
+        super(DDPM, self).__init__()
         self.L_t_record = None
         self.optimizer = None
         self.cov_optimizer = None
@@ -98,7 +98,7 @@ class GaussianDiffusion(keras.Model):
 
         self.optimizer = keras.optimizers.Adam(learning_rate=lr_schedule)
         self.loss_fn = losses.MeanSquaredError()
-        super(GaussianDiffusion, self).compile(
+        super(DDPM, self).compile(
             optimizer=keras.optimizers.Adam(learning_rate=lr_schedule), loss=self.loss_fn)
 
         # 协方差
@@ -143,7 +143,6 @@ class GaussianDiffusion(keras.Model):
 
     @tf.function
     def train_step(self, x_0):
-
         if self.predict_cov:
             with tf.GradientTape() as tape:
                 x_t, eps, t, eps_pred, v_pred = self.call(x_0)
@@ -175,7 +174,6 @@ class GaussianDiffusion(keras.Model):
     def metrics(self):
         return [self.loss_tracker]
 
-    # @tf.function
     def show_diffusion(self, z_coeff):
         # z_coeff : (ZERNIKE_NUMS,) tf.Tensor
         # assert type(z_coeff) == tf.Tensor,"z_coeff must be of type tf.Tensor"
@@ -185,7 +183,6 @@ class GaussianDiffusion(keras.Model):
         z_coeff = z_coeff[None, :]
         fig, axes = plt.subplots(3, 3, figsize=(10, 5))
         axes = axes.flatten()
-        # todo: 有一个子图绘制不出来，待完善
         for i, t in enumerate(sampled_t):
             if t == 0:
                 z_coeff_t = z_coeff.numpy()
@@ -199,11 +196,13 @@ class GaussianDiffusion(keras.Model):
             bar = axes[i].imshow(z_coeff_t, aspect='auto', cmap=plt.get_cmap('viridis'))
             fig.colorbar(bar, ax=axes[i], orientation='vertical')
             axes[i].set_yticks([])
-        print("Diffusion process plotting...")
+            axes[i].set_title("t = {}".format(t))
+
         fig.suptitle("Diffusion process")
         fig.tight_layout()
         plt.savefig("./SampledImgs/Diffusion_process.png", dpi=300)
         plt.close(fig)
+        print("Diffusion process plot successfully saved")
 
     @tf.function
     def denoise_step_cov(self, x_t, t):
@@ -260,39 +259,41 @@ class GaussianDiffusion(keras.Model):
 
     def show_denoise(self, x_T):
         x_t = x_T
-        if self.predict_cov:
-            for t in tf.range(self.T, 0, -1):
+
+        sampled_t = tf.constant(np.linspace(1, self.T, 9).astype(int))
+        fig, axes = plt.subplots(3, 3, figsize=(10, 5))
+        i = 0
+        axes = axes.flatten()
+        for t in tf.range(self.T, 0, -1):
+
+            if self.predict_cov:
                 x_t = self.denoise_step_cov(x_t, t)
-            return x_t
-        else:
-            sampled_t = tf.constant(np.linspace(0, self.T - 1, 9).astype(int))
-            fig, axes = plt.subplots(3, 3)
-            i = 0
-            axes = axes.flatten()
-            for t in tf.range(self.T, 0, -1):
+            else:
                 x_t = self.denoise_step(x_t, t)
-                # 判断 t 是否在 sampled_t 中
-                is_in_sampled_t = tf.reduce_any(tf.equal(t, sampled_t))
-                if is_in_sampled_t:
-                    coeff = x_t[0].numpy()
-                    coeff = coeff[None, :]
-                    bar = axes[i].imshow(coeff, aspect='auto', cmap=plt.get_cmap("viridis"))
-                    fig.colorbar(bar, ax=axes[i], orientation='vertical')
-                    axes[i].set_xticks([])
-                    i += 1
-                    if i == len(sampled_t):
-                        fig.suptitle("Denoise process")
-                        fig.tight_layout()
-                        plt.savefig("./SampledImgs/Denoise_process.png")
-                        plt.close(fig)
-            return x_t
+
+            # 判断 t 是否在 sampled_t 中
+            if tf.reduce_any(tf.equal(t, sampled_t)):
+                coeff = x_t[0].numpy()
+                coeff = coeff[None, :]
+                bar = axes[i].imshow(coeff, aspect='auto', cmap=plt.get_cmap("viridis"))
+                fig.colorbar(bar, ax=axes[i], orientation='vertical')
+                axes[i].set_yticks([])
+                axes[i].set_title("t = {}".format(t))
+                i += 1
+                if i == len(sampled_t):
+                    fig.suptitle("Denoise process")
+                    fig.tight_layout()
+                    plt.savefig("./SampledImgs/Denoise_process.png", dpi=300)
+                    plt.close(fig)
+                    print("Denoise process plot successfully saved")
+        return x_t
 
 
-class GaussianDiffusionSampler(keras.Model):
-    def __init__(self, model, beta_1, beta_T, T, cosine_schedule=False, model_v=None, ):
-        super(GaussianDiffusionSampler, self).__init__()
-        self.model = model
-
-    def forward(self, x_T):
-        ...
-    # 可能用不上了
+# class GaussianDiffusionSampler(keras.Model):
+#     def __init__(self, model, beta_1, beta_T, T, cosine_schedule=False, model_v=None, ):
+#         super(GaussianDiffusionSampler, self).__init__()
+#         self.model = model
+#
+#     def forward(self, x_T):
+#         ...
+#     # 可能用不上了

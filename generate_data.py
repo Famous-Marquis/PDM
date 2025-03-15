@@ -145,7 +145,7 @@ def gen_data(args: tuple[int, int, list, int, int]):
     series.to_pickle(os.path.join(DATADIR, "data", "{}_DDPM.pkl".format(idx)))
 
 
-def generate_data(length_per_Dr0, nums_Dr0, Dr0_range, parallel_processors=2, Dr0_constant=None):
+def generate_data(length_per_Dr0, Dr0_range, parallel_processors=2,nums_Dr0=2):
     ##设置生成样本的参数
     assert (
             nums_Dr0 % parallel_processors == 0
