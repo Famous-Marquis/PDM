@@ -143,8 +143,6 @@ class GaussianDiffusion(keras.Model):
 
     @tf.function
     def train_step(self, x_0):
-        # 余弦调度：4个返回值
-        # todo：外部梯度下降时，考虑3/4个返回值的处理
 
         if self.predict_cov:
             with tf.GradientTape() as tape:
@@ -232,7 +230,7 @@ class GaussianDiffusion(keras.Model):
     def denoise_step(self, x_t, t):
         coeff1 = extract(self.one_div_sqrt_alpha, t, x_t.shape)
         coeff2 = extract(self.beta_div_sqrt_one_minus_alpha_bar, t, x_t.shape)
-        coeff3 = extract(self.beta, t, x_t.shape)
+        coeff3 = extract(self.beta_tilde, t, x_t.shape)
         eps_pred = self.model(x_t, t)
 
         # 使用 tf.cond 替代 if-else

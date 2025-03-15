@@ -10,40 +10,50 @@ from tensorflow import keras
 from Diffusion import GaussianDiffusion
 from Model import FCMean, FCCov
 from aberration import ZERNIKE_NUMS
+from scipy.linalg import sqrtm
 
-
-def Frechet_distance(x, y):
+def Frechet_distance(x, y, epsilon=1e-6):
     def calculate_mean_cov(z):
-        # l: [N, ZERNIKE_NUMS]
-        assert type(z) is np.ndarray
-
+        assert isinstance(z, np.ndarray)
         mean = np.mean(z, axis=0)
         cov = np.cov(z, rowvar=False)
         return mean, cov
 
     def check_nonsensitive_eigenvalues(l):
         nonpos = l < 0
-        if np.any(l):
-            warnings.warn("Non-positive eigenvalues, FID may not work")
+        if np.any(nonpos):
+            print("Non-positive eigenvalues, FID may not work")
             l[nonpos] = 0
         return l
 
-    assert type(x) is np.ndarray
-    assert type(y) is np.ndarray
+    assert isinstance(x, np.ndarray)
+    assert isinstance(y, np.ndarray)
 
     mean_x, cov_x = calculate_mean_cov(x)
     mean_y, cov_y = calculate_mean_cov(y)
+
+    # 添加正则化项以确保协方差矩阵的正定性
+    cov_x += np.eye(cov_x.shape[0]) * epsilon
+    cov_y += np.eye(cov_y.shape[0]) * epsilon
+
     l1, v1 = np.linalg.eigh(cov_x)
     l2, v2 = np.linalg.eigh(cov_y)
     l1 = check_nonsensitive_eigenvalues(l1)
     l2 = check_nonsensitive_eigenvalues(l2)
+
     sqrt_cov_x = v1 @ np.diag(np.sqrt(l1)) @ v1.T
     sqrt_cov_y = v2 @ np.diag(np.sqrt(l2)) @ v2.T
 
+    # 计算协方差矩阵的乘积
     cov_prod = sqrt_cov_x @ cov_y @ sqrt_cov_y
-    l_prod, vec_prod = np.linalg.eigh(cov_prod)
-    l_prod = check_nonsensitive_eigenvalues(l_prod)
-    sqrt_prod = vec_prod @ np.diag(np.sqrt(l_prod)) @ vec_prod.T
+
+    # 使用scipy.linalg.sqrtm计算矩阵的平方根
+    sqrt_prod = sqrtm(cov_prod)
+
+    # 确保sqrt_prod是实数矩阵
+    if np.iscomplexobj(sqrt_prod):
+        sqrt_prod = np.real(sqrt_prod)
+
     trace = np.trace(cov_x + cov_y - 2 * sqrt_prod)
 
     diff_mean = mean_x - mean_y
@@ -52,11 +62,11 @@ def Frechet_distance(x, y):
 
 
 class DDPMMonitor(keras.callbacks.Callback):
-    def __init__(self, real_data):
-
+    def __init__(self, real_data, model_checkpoint_path):
         self.real_data = real_data
         self.model: GaussianDiffusion
         self.fds = []
+        self.model_checkpoint_path = model_checkpoint_path
 
     def on_train_begin(self, logs=None):
         # 绘制正向扩散过程
@@ -66,13 +76,14 @@ class DDPMMonitor(keras.callbacks.Callback):
 
     def on_epoch_end(self, epoch, logs=None):
         # if epoch % 5 == 0:
-        max_len = min(500, self.real_data.shape[0])
+        max_len = min(4000, self.real_data.shape[0])
 
         x_T = tf.random.normal((max_len, self.real_data.shape[1]))
         generated_data = self.model.denoise(x_T)
         generated_data = generated_data.numpy()
         fd = Frechet_distance(self.real_data[:max_len], generated_data)
         self.fds.append(fd)
+
         logs["val_loss"] = fd
         print("epoch:", epoch, " Frechet distance:", fd)
 
@@ -117,11 +128,11 @@ class DDPMTrainer:
                                  cosine_schedule=self.model_config["cosine_schedule"], )
 
     def _load_weights(self):
-        # todo: 模型权重加载失败，需要看官网指南
         if self.model_config["load_weights"]:
             if os.path.exists(self.model_checkpoint_path + ".index"):
+            # if os.path.exists(self.model_checkpoint_path):
                 try:
-                    self.ddpm.model.load_weights(self.model_checkpoint_path)
+                    self.ddpm.load_weights(self.model_checkpoint_path)
                 except Exception as e:
                     print("Weights load failed, {}".format(e))
                 else:
@@ -132,7 +143,7 @@ class DDPMTrainer:
     def _plot_loss(self, history):
         if self.model_config["predict_cov"]:
             ...
-        # todo: finish predict plot
+        # todo: 完善 预测协方差的绘图
         else:
             loss_epoch = history.history['loss_simple']
             fig = plt.figure()
@@ -175,12 +186,10 @@ class DDPMTrainer:
             tf_dataset,
             epochs=epochs,
             callbacks=[
-                DDPMMonitor(real_data=data_matrix),
-                keras.callbacks.ModelCheckpoint(
-                    filepath=self.model_checkpoint_path,
-                    save_best_only=True,
-                    save_weights_only=True
-                )
+                DDPMMonitor(real_data=data_matrix,
+                            model_checkpoint_path=self.model_checkpoint_path),
+                keras.callbacks.ModelCheckpoint(self.model_checkpoint_path, save_weights_only=True,
+                                                save_best_only=True),
             ]
         )
 

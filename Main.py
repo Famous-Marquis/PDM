@@ -5,16 +5,16 @@ MODEL_CONFIG = {
     "cosine_schedule": True,
     "beta_1": 0.0001,
     "beta_T": 0.01,
-    "T": 100,
-    "epochs": 200,
+    "T": 50,
+    "epochs": 300,
     "batch_size": 64,
-    "lr_min": 0.01,
-    "lr_max": 0.3,
+    "lr_min": 0.01,#0.01,
+    "lr_max": 0.3,#0.3,
     "model_checkpoint_path": "./Checkpoints/DDPM_model.ckpt",
     "data_path": "./DDPM_data/merged_data.pkl",
     "d_model": ZERNIKE_NUMS,
-    "load_weights": True,
-    "model_mean_struct": [2048,4096],  # [List] 均值神经网络: 全连接层的神经元数
+    "load_weights": False,
+    "model_mean_struct": [128,2048,4096],  # [List] 均值神经网络: 全连接层的神经元数
     "model_v_struct": [128, 256, 512, 512, 256],  # [List] 协方差神经网络: 全连接层的神经元数
 
 
@@ -31,5 +31,5 @@ if __name__ == '__main__':
     DDPM_trainer = DDPMTrainer(model_config=MODEL_CONFIG)
 
     DDPM_trainer.ddpm.build(input_shape=(MODEL_CONFIG["d_model"],))
-    DDPM_trainer.train(epochs=10)
+    DDPM_trainer.train()
     DDPM_trainer.summary()
