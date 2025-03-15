@@ -1,3 +1,4 @@
+# 绘制扩散示例，用于大创演示
 import numpy as np
 from matplotlib import pyplot as plt
 
