@@ -11,7 +11,9 @@ MODEL_CONFIG = {
     "lr_min": 0.0001,#0.01,
     "lr_max": 0.001,#0.3,
     "model_checkpoint_path": "./Checkpoints/DDPM_model.ckpt",
+    "gan_checkpoint_path": "./Checkpoints/gan.ckpt",
     "data_path": "./DDPM_data/merged_data.pkl",
+    "VGG_data_path":None,# todo: VGG 数据库
     "d_model": ZERNIKE_NUMS,# 系数长度
     "load_weights": True,
     "model_mean_struct": [128,2048,4096],  # [List] 均值神经网络: 全连接层的神经元数

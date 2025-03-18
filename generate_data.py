@@ -121,10 +121,6 @@ def gen_data(args: tuple[int, int, list, int, int]):
                 assert list(z_coes.shape) == [
                     ZERNIKE_NUMS,
                 ], "z-coes形状不对！"
-                # 数据预处理
-                # mean = z_coes.mean()
-                # var = z_coes.var()
-                # z_coes = (z_coes - mean) / var
                 # image = ps.get_screen()
                 # plt.imshow(image)
                 # plt.colorbar()
