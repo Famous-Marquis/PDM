@@ -94,7 +94,6 @@ class DDPMMonitor(keras.callbacks.Callback):
         plt.plot(self.fds)
         plt.xlabel('epoch ')
         plt.ylabel("Frechet distance")
-        # plt.savefig("./Record/FD-epoch.png")
         plt.show()
         plt.close(fig1)
         maxlen = min(100, self.real_data.shape[0])
@@ -114,8 +113,18 @@ class DDPMMonitor(keras.callbacks.Callback):
         plt.grid(True)
         plt.legend()
         plt.tight_layout()
-        plt.savefig("./SampledImgs/struct.png",dpi=300)
-        # todo: 随机绘制多个原始样本与生成样本
+        plt.savefig("./SampledImgs/DDPM_struct.png",dpi=300)
+        plt.close(fig2)
+        # 随机绘制多个原始样本与生成样本
+        fig,axes = plt.subplots(3,3,figsize=(10,5))
+        for i,ax in enumerate(axes.flat):
+            bar=ax.imshow(x_0_eval[i][None,:],aspect='auto',cmap='viridis')
+            fig.colorbar(bar, ax=ax,orientation='vertical')
+            ax.set_yticks([])
+        fig.suptitle('DDPM generated samples')
+        fig.tight_layout()
+        plt.savefig("./SampledImgs/DDPM_samples.png",dpi=300)
+        plt.close(fig)
 
 class DDPMTrainer:
 
@@ -159,7 +168,7 @@ class DDPMTrainer:
     def _plot_loss(self, history):
         if self.model_config["predict_cov"]:
             ...
-        # todo: 完善 预测协方差的绘图
+        # (协方差)todo: 完善 预测协方差的绘图
         else:
             loss_epoch = history.history['loss_simple']
             fig = plt.figure()
@@ -179,7 +188,7 @@ class DDPMTrainer:
         data_matrix = np.stack(data_series).astype(np.float32)
         dataset = tf.data.Dataset.from_tensor_slices(data_matrix)
         dataset = dataset.shuffle(buffer_size=batch_size * 10)
-        dataset = dataset.batch(batch_size, drop_remainder=True)
+        dataset = dataset.batch(batch_size, drop_remainder=True).prefetch(tf.data.experimental.AUTOTUNE)
         return dataset, data_matrix
 
     def summary(self):

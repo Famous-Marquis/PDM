@@ -7,17 +7,7 @@ from tensorflow.keras import losses, optimizers
 from aberration import ZERNIKE_NUMS
 
 
-#
-# def extract(v, t, x_shape):
-#     """
-#     提取特定时间步的系数,并重塑为适合广播的形状
-#
-#     """
-#     device = t.device
-#     out = torch.gather(v, 0, t).float().to(device)
-#     return out.view(
-#         [t.shape[0]] + [1] * (len(x_shape) - 1)
-#     )  # 将后面的维度设置为1,用于广播
+
 def extract(v, t, x_shape):
     """
     提取 v 中的值，并广播到目标形状 x_shape。
@@ -55,7 +45,7 @@ class DDPM(keras.Model):
         self.loss_tracker = keras.metrics.Mean(name='loss')
         if self.cosine_schedule:
             # 余弦调度β
-            # TODO: 对照论文检查对应系数，并且在Dubug模式下利用断点，查看每一个变量的值。
+            # todo: 对照论文检查对应系数，并且在Dubug模式下利用断点，查看每一个变量的值。
             """一般来说，系数总体呈现统一的趋势。若发现某个单调性变化之处或“inf”“nan”,很有可能出错
             """
             t = tf.range(1, T + 1 + 5)
@@ -106,7 +96,7 @@ class DDPM(keras.Model):
             self.cov_optimizer = keras.optimizers.Adam(lr=lr_schedule)
 
             self.L_t_record = np.zeros([self.T, 10], dtype=float)
-            # todo: 完善Lvlb的存储与更新
+            # (协方差)todo: 完善Lvlb的存储与更新
         else:
             self.cov_optimizer = None
 
@@ -117,7 +107,7 @@ class DDPM(keras.Model):
             log_likelihood = -0.5 * k * n * np.log(2 * np.pi) - 0.5 * n * \
                              np.linalg.slogdet(cov_pred)[1] - 0.5 * np.sum(
                 (x_t_prev - mean_pred) @ np.linalg.inv(cov_pred) * (cov_pred - mean_pred))
-            # todo：完善Lt计算以及Lvlb
+            # (协方差)todo：完善Lt计算以及Lvlb
             ...
         elif t == self.T:
             ...
@@ -147,13 +137,13 @@ class DDPM(keras.Model):
             with tf.GradientTape() as tape:
                 x_t, eps, t, eps_pred, v_pred = self.call(x_0)
                 # loss = L_hybrid
-                # todo: 将下列重复的代码封装到call()?
+                # (协方差)todo: 将下列重复的代码封装到call()?
 
                 param1 = extract(self.beta, t, x_t.shape)
                 param2 = extract(self.beta_tilde, t, x_t.shape)
                 cov_pred = tf.math.exp(
                     v_pred * tf.math.log(param1) + (1 - v_pred) * tf.math.log(param2))
-                # todo：后续补充此梯度下降
+                # (协方差)todo：后续补充此梯度下降
                 ...
             ...
 

@@ -41,7 +41,9 @@ class FCMean(keras.Model):
         super(FCMean, self).__init__(name='FC')
         self.d_model = d_model
         self._layers = []
+        # self._layers.append(keras.Input(shape=(d_model,)))
         self.time_embedding = TimeEmbedding(d_model)
+        # todo: 考虑调整Leaky ReLU的alpha(可参照GAN的网络结构)
         for units in model_struct:
             self._layers.append(layers.Dense(units, kernel_regularizer=regularizers.l2(0.01),
                                              kernel_initializer=initializers.RandomNormal(mean=0.0,
@@ -54,6 +56,7 @@ class FCMean(keras.Model):
                                          kernel_initializer=initializers.RandomNormal(mean=0.0,
                                                                                       stddev=0.05)))
         self._layers.append(layers.LayerNormalization())
+        # todo: 考虑将最后一个输出层换作‘tanh’
         self._layers.append(layers.LeakyReLU())
 
         # self.attn=_layers.Attention()
@@ -74,6 +77,7 @@ class FCCov(keras.Model):
         super(FCCov, self).__init__(name='FCCov')
         self.d_model = d_model
         self._layers = []
+        # self._layers.append(keras.Input(shape=(d_model,)))
         self.time_embedding = TimeEmbedding(d_model)
         for units in model_struct:
             self._layers.append(layers.Dense(units, kernel_regularizer=regularizers.l2(0.01),
