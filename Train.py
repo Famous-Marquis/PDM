@@ -113,7 +113,7 @@ class DDPMMonitor(keras.callbacks.Callback):
         plt.grid(True)
         plt.legend()
         plt.tight_layout()
-        plt.savefig("./SampledImgs/DDPM_struct.png",dpi=300)
+        plt.savefig("./SampledImgs/DDPM_struct1.png", dpi=300)
         plt.close(fig2)
         # 随机绘制多个原始样本与生成样本
         fig,axes = plt.subplots(3,3,figsize=(10,5))
@@ -123,7 +123,7 @@ class DDPMMonitor(keras.callbacks.Callback):
             ax.set_yticks([])
         fig.suptitle('DDPM generated samples')
         fig.tight_layout()
-        plt.savefig("./SampledImgs/DDPM_samples.png",dpi=300)
+        plt.savefig("./SampledImgs/DDPM_samples1.png", dpi=300)
         plt.close(fig)
 
 class DDPMTrainer:
