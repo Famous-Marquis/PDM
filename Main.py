@@ -16,7 +16,7 @@ MODEL_CONFIG = {
     "gan_learning_rate": 0.0005,
     "model_checkpoint_path": "./Checkpoints/DDPM_model.ckpt",
     "gan_checkpoint_path": "./Checkpoints/gan.ckpt",
-    "data_path": "./DDPM_data/merged_data.pkl",
+    "data_path": "./Datasets/merged_data.pkl",
     "VGG_data_path":None,# todo: VGG 数据库
     "d_model": ZERNIKE_NUMS,# 系数长度
     "load_weights": True,
@@ -28,7 +28,9 @@ MODEL_CONFIG = {
     "length_per_Dr0": 2500,# 样本数 = length * nums_Dr0
     "nums_Dr0":2, # 生成数据的Dr0个数
     "Dr0_range":1,# List [min,max]  or CONST
+    # todo：gan与DDPM生成数据库
 
+    # todo：VGG训练代码
     # 扩散过程
 }
 if __name__ == '__main__':
@@ -44,6 +46,6 @@ if __name__ == '__main__':
     DDPM_trainer.ddpm.build(input_shape=(MODEL_CONFIG["d_model"],))
     DDPM_trainer.train(epochs=1)
     DDPM_trainer.summary()
-
+    """训练GAN"""
     gan_helper=GANHelper()
     gan_helper.train()

@@ -389,8 +389,9 @@ class GANHelper:
 
 
 if __name__ == "__main__":
-    gan_helper = GANHelper()
-    train_histories = gan_helper.train(300)
+    ...
+    # gan_helper = GANHelper()
+    # train_histories = gan_helper.train(300)
     # d_loss = [item for h in train_histories for item in h.history["d_loss"]]
     # g_loss = [item for h in train_histories for item in h.history["g_loss"]]
     #

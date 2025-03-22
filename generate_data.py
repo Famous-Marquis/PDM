@@ -4,7 +4,7 @@
 gen_data: 多线程并行产生模拟湍流数据
 
 """
-
+from concurrent.futures import ThreadPoolExecutor
 import glob
 import multiprocessing as mp
 import os
@@ -12,12 +12,13 @@ import os
 import numpy as np
 import pandas as pd
 from PIL import Image
+from scipy import signal
 from tqdm import tqdm
 
 from aberration import ZERNIKE_NUMS, PhaseScreen
 from beam import LG_mode
 
-DATADIR = "./DDPM_data/"
+DATADIR = "./Datasets/"
 mode_list = [
     (1),
     (-2),
@@ -104,7 +105,7 @@ def gen_data(args: tuple[int, int, list, int, int]):
         Dr0_list = [Dr0_range for i in range(repeat_times)]
     idx = args[3]
     position = args[4]
-    ps = PhaseScreen(256, ZERNIKE_NUMS, cache_dir="TURBULENCE/cache/")
+    ps = PhaseScreen(256, ZERNIKE_NUMS, cache_dir="./cache/")
     with tqdm(
             total=length * repeat_times,
             desc="当前生成第{}~{}组数据".format(
@@ -121,6 +122,7 @@ def gen_data(args: tuple[int, int, list, int, int]):
                 assert list(z_coes.shape) == [
                     ZERNIKE_NUMS,
                 ], "z-coes形状不对！"
+
                 # image = ps.get_screen()
                 # plt.imshow(image)
                 # plt.colorbar()
@@ -141,7 +143,47 @@ def gen_data(args: tuple[int, int, list, int, int]):
     series.to_pickle(os.path.join(DATADIR, "data", "{}_DDPM.pkl".format(idx)))
 
 
-def generate_data(length_per_Dr0, Dr0_range, parallel_processors=2,nums_Dr0=2):
+# data_series = pd.read_pickle(pkl_path)
+# data_matrix = np.stack(data_series).astype(np.float32)
+def process_coeff_beam(coeff, beam, ps):
+    ps.set_zernike_coeffients(coeff)
+    psf = ps.get_psf()
+    img = signal.fftconvolve(psf, beam)
+    img = np.abs(img)
+    return img
+
+def gen_img_label(coeff_pickle, name):
+    data_matrix = np.stack(coeff_pickle, axis=0).astype(np.float32)
+    # todo: 将ps处理过程批次化，加快处理速度
+    labels = []
+    imgs = []
+    futures=[]
+    ps = PhaseScreen(256, ZERNIKE_NUMS, cache_dir="./cache/")
+    with ThreadPoolExecutor() as executor:
+    # psf_array = np.array([ps.get_psf(ps.set_zernike_coeffients(coeff)) for coeff in data_matrix])  # 预计算 PSF
+        with tqdm(total=len(beam_list) * len(data_matrix),
+                  desc=f'generating VGG data of {name}...') as pbar:
+            for i, beam in enumerate(beam_list):
+                # 光束循环
+
+                for j, coeff in enumerate(data_matrix):
+                    # 系数循环
+                    future = executor.submit(process_coeff_beam, coeff, beam, ps)
+                    future.add_done_callback(lambda p: pbar.update(1))
+                    futures.append((future,i))
+            for future,i in futures:
+                imgs.append(future.result())
+                labels.append(i)
+
+            img_stack = np.array(imgs, dtype=np.float32)
+            labels_array = np.array(labels, dtype=np.float32)
+            np.savez(f"./Datasets/VGG_Datasets_{name}.npz", imgs=img_stack, labels=labels_array,
+                     allow_pickle=False)
+            pbar.close()
+
+
+
+def generate_data(length_per_Dr0, Dr0_range, parallel_processors=2, nums_Dr0=2):
     ##设置生成样本的参数
     assert (
             nums_Dr0 % parallel_processors == 0
@@ -195,10 +237,12 @@ def generate_data(length_per_Dr0, Dr0_range, parallel_processors=2,nums_Dr0=2):
     assert list(merged_series[0].shape) == [
         ZERNIKE_NUMS,
     ]
-    merged_series.to_pickle("./DDPM_data/merged_data.pkl")
-    print(f'All "_DDPM.npy" files have been merged into "./DDPM_data/merged_data.pkl"')
+    merged_series.to_pickle("./Datasets/merged_data.pkl")
+    print(f'All "_DDPM.npy" files have been merged into "./Datasets/merged_data.pkl"')
 
 
 if __name__ == "__main__":
-    generate_data(length_per_Dr0=250, nums_Dr0=12,Dr0_range=1)
+    # generate_data(length_per_Dr0=250, nums_Dr0=12, Dr0_range=1)
+    pkl = pd.read_pickle("./Datasets/merged_data.pkl")
+    gen_img_label(pkl,'real')
     # gen_data((25, 1, [5, 6], 1, 1))

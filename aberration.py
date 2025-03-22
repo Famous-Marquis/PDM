@@ -4,6 +4,7 @@ ZM和ZN是zernike系数的索引，其中ZM的索引有两种表示方式，根�
 """
 CACHE_DIR="./cache"
 ZERNIKE_NUMS = 64
+SCREEN_SIZE = 224
 ZN = [
     0,
     1,
@@ -1214,7 +1215,7 @@ ZM = [
 ]
 from typing import Literal
 import numpy as np
-from TURBULENCE.matlab import meshgrid, cart2pol, ft2, ift2, randn
+from matlab import meshgrid, cart2pol, ft2, ift2, randn
 import matplotlib.pyplot as plt
 from scipy import optimize
 from math import factorial
@@ -1376,7 +1377,7 @@ class PhaseScreen:
         Zernike Order
     """
 
-    def __init__(self, N=256, znum=ZERNIKE_NUMS, cache_dir=CACHE_DIR):
+    def __init__(self, N=SCREEN_SIZE, znum=ZERNIKE_NUMS, cache_dir=CACHE_DIR):
         self.N = N
         self.znum = znum
         self.x, self.y = meshgrid(np.linspace(-1, 1, N))
@@ -1447,7 +1448,7 @@ class PhaseScreen:
             zernike系数列表
 
         """
-        if isinstance(z_coes, list):
+        if isinstance(z_coes, list) or isinstance(z_coes, np.ndarray):
             if len(z_coes) < self.znum:
                 z_coes += [0 for _ in range(self.znum - len(z_coes))]
             assert len(z_coes) == self.znum

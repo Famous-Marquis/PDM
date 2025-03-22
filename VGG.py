@@ -2,6 +2,8 @@ import tensorflow.keras as keras
 from tensorflow.keras.layers import Conv2D, BatchNormalization, Activation, MaxPool2D, Dropout, \
     Flatten, Dense
 
+from generate_data import beam_list
+
 
 class VGG16(keras.Model):
     def __init__(self):
@@ -65,7 +67,7 @@ class VGG16(keras.Model):
         self.d6 = Dropout(0.2)
         self.f2 = Dense(512, activation='relu')
         self.d7 = Dropout(0.2)
-        self.f3 = Dense(10, activation='softmax')
+        self.f3 = Dense(len(beam_list), activation='softmax')
 
     def call(self, x):
         x = self.c1(x)

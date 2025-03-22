@@ -6,8 +6,8 @@ from scipy import signal
 from PIL import Image
 import os
 from tqdm import tqdm
-from imaging.aberration import PhaseScreen
-from imaging.beam import LG_mode
+from aberration import PhaseScreen
+from beam import LG_mode
 
 DATADIR = "../data/gan/"
 mode_list = [
@@ -31,7 +31,7 @@ mode_list = [
 
 def resize_beam(beam):
     """
-    压缩beam至(224,224)
+    压缩beam至(256,256)
     """
     # 首先确保输入是 NumPy 数组
     if isinstance(beam, Image.Image):
@@ -44,7 +44,7 @@ def resize_beam(beam):
     beam_image = Image.fromarray(np.uint8(beam_abs))
 
     # 使用 PIL 的 resize 方法来改变图像大小
-    resized_image = beam_image.resize((224, 224))
+    resized_image = beam_image.resize((256, 256))
 
     # 将 PIL Image 对象转换回 NumPy 数组
     resized_beam = np.array(resized_image)

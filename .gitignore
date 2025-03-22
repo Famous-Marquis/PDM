@@ -1,4 +1,4 @@
-DDPM_data/*
+Datasets/*
 cache/*
 .vscode/
 Checkpoints/ckpt_*
