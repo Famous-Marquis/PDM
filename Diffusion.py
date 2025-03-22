@@ -7,7 +7,6 @@ from tensorflow.keras import losses, optimizers
 from aberration import ZERNIKE_NUMS
 
 
-
 def extract(v, t, x_shape):
     """
     提取 v 中的值，并广播到目标形状 x_shape。
@@ -190,7 +189,7 @@ class DDPM(keras.Model):
 
         fig.suptitle("Diffusion process")
         fig.tight_layout()
-        plt.savefig("./SampledImgs/Diffusion_process.png", dpi=300)
+        plt.savefig("./SampledImgs/Diffusion_process1.png", dpi=300)
         plt.close(fig)
         print("Diffusion process plot successfully saved")
 
@@ -273,7 +272,7 @@ class DDPM(keras.Model):
                 if i == len(sampled_t):
                     fig.suptitle("Denoise process")
                     fig.tight_layout()
-                    plt.savefig("./SampledImgs/Denoise_process.png", dpi=300)
+                    plt.savefig("./SampledImgs/Denoise_process1.png", dpi=300)
                     plt.close(fig)
                     print("Denoise process plot successfully saved")
         return x_t

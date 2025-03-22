@@ -5,11 +5,11 @@ import pandas
 import tensorflow as tf
 from matplotlib import pyplot as plt
 from tensorflow import keras
-from tensorflow.keras import optimizers, layers
+from tensorflow.keras import layers
+from tensorflow.keras.optimizers.schedules import ExponentialDecay
 
-
-from Main import MODEL_CONFIG
 from Train import Frechet_distance
+from config import MODEL_CONFIG
 from plot_struct import plot_struct
 
 print(sys.path)
@@ -186,6 +186,7 @@ class GANMonitor(keras.callbacks.Callback):
     on_epoch_end : 在每个epoch结束时调用，用于评估生成器的性能。
     """
 
+
     def __init__(self, real_zernike, latent_dim=128):
         self.model: keras.Model  # 当前正在训练的模型，由Keras回调机制自动设置
         self.real_zernike = real_zernike
@@ -217,7 +218,7 @@ class GANMonitor(keras.callbacks.Callback):
             ax.set_yticks([])
         fig.suptitle('GAN generated samples')
         fig.tight_layout()
-        plt.savefig("./SampledImgs/GAN_samples.png", dpi=300)
+        plt.savefig("./SampledImgs/GAN_samples1.png", dpi=300)
         plt.close(fig)
         # FD绘图
         fig1 = plt.figure()
@@ -240,7 +241,7 @@ class GANMonitor(keras.callbacks.Callback):
         plt.grid(True)
         plt.legend()
         plt.tight_layout()
-        plt.savefig("./SampledImgs/GAN_struct.png", dpi=300)
+        plt.savefig("./SampledImgs/GAN_struct1.png", dpi=300)
         plt.close(fig2)
 
 
@@ -290,10 +291,28 @@ class GANHelper:
             generator=generator,
             latent_dim=self.latent_dim,
         )
+        generator_initial_learning_rate = self.model_config["gan_learning_rate"]
+        generator_decay_steps = 10
+        generator_decay_rate = 0.1
+        generator_lr_schedule = ExponentialDecay(
+            generator_initial_learning_rate,
+            decay_steps=generator_decay_steps,
+            decay_rate=generator_decay_rate
+        )
+
+        # 配置判别器的学习率调度器
+        discriminator_initial_learning_rate = self.model_config["gan_learning_rate"]
+        discriminator_decay_steps = 10
+        discriminator_decay_rate = 0.1
+        discriminator_lr_schedule = ExponentialDecay(
+            discriminator_initial_learning_rate,
+            decay_steps=discriminator_decay_steps,
+            decay_rate=discriminator_decay_rate
+        )
 
         self.gan.compile(
-            d_optimizer=optimizers.Adam(learning_rate=self.model_config["gan_learning_rate"]),
-            g_optimizer=optimizers.Adam(learning_rate=self.model_config["gan_learning_rate"]),
+            d_optimizer=tf.keras.optimizers.Adam(learning_rate=discriminator_lr_schedule),
+            g_optimizer=tf.keras.optimizers.Adam(learning_rate=generator_lr_schedule),
             loss_fn=keras.losses.BinaryCrossentropy(from_logits=True),
         )
     def _load_weights(self):
