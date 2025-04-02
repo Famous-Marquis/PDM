@@ -292,8 +292,8 @@ class GANHelper:
             latent_dim=self.latent_dim,
         )
         generator_initial_learning_rate = self.model_config["gan_learning_rate"]
-        generator_decay_steps = 10
-        generator_decay_rate = 0.1
+        generator_decay_steps = 100
+        generator_decay_rate = 0.9
         generator_lr_schedule = ExponentialDecay(
             generator_initial_learning_rate,
             decay_steps=generator_decay_steps,
@@ -302,8 +302,8 @@ class GANHelper:
 
         # 配置判别器的学习率调度器
         discriminator_initial_learning_rate = self.model_config["gan_learning_rate"]
-        discriminator_decay_steps = 10
-        discriminator_decay_rate = 0.1
+        discriminator_decay_steps = 100
+        discriminator_decay_rate = 0.9
         discriminator_lr_schedule = ExponentialDecay(
             discriminator_initial_learning_rate,
             decay_steps=discriminator_decay_steps,

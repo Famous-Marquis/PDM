@@ -12,10 +12,12 @@ MODEL_CONFIG = {
     "lr_min": 0.001,#0.01,
     "lr_max": 0.1,#0.3,
     "gan_learning_rate": 0.001,
+    "VGG_lr": 0.001,
     "model_checkpoint_path": "./Checkpoints/DDPM_model.ckpt",
     "gan_checkpoint_path": "./Checkpoints/gan.ckpt",
+    "VGG_checkpoint_path": "./Checkpoints/VGG_model.ckpt",
     "data_path": "./Datasets/merged_data.pkl",
-    "VGG_data_path":None,# todo: VGG 数据库
+    "VGG_data_path":None,
     "d_model": ZERNIKE_NUMS,# 系数长度
     "load_weights": True,
     "GAN_load_weights": False,
@@ -26,8 +28,6 @@ MODEL_CONFIG = {
     "length_per_Dr0": 2500,# 样本数 = length * nums_Dr0
     "nums_Dr0":2, # 生成数据的Dr0个数
     "Dr0_range":1,# List [min,max]  or CONST
-    # todo：gan与DDPM生成数据库
-
-    # todo：VGG训练代码
+    # todo: 待DDPM与GAN训练好后，分别用DDPM与GAN生成对应数据库
     # 扩散过程
 }

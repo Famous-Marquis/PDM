@@ -1,7 +1,7 @@
 from Train import DDPMTrainer
 from config import MODEL_CONFIG
 from gan import GANHelper
-
+from VGG import VGG16Trainer
 if __name__ == '__main__':
     # # 示例数据
     # x = np.random.rand(100, 2)  # 100 samples, 2 features
@@ -18,3 +18,7 @@ if __name__ == '__main__':
 
     gan_helper=GANHelper()
     gan_helper.train()
+
+    # VGG_trainer = VGG16Trainer(model_config=MODEL_CONFIG)
+    # VGG_trainer.train_model(epochs=100)
+
