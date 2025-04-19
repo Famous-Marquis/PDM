@@ -3,7 +3,7 @@
 ZM和ZN是zernike系数的索引，其中ZM的索引有两种表示方式，根据需要取用
 """
 CACHE_DIR="./cache"
-ZERNIKE_NUMS = 64
+ZERNIKE_NUMS = 66
 SCREEN_SIZE = 224
 ZN = [
     0,
@@ -1333,35 +1333,32 @@ def noll_zernike_coeffients(z_num=ZERNIKE_NUMS, Dr0=7):
 
     n = ZN[:z_num]
     m = ZM[:z_num]
-    nn = n
-    mm = m
-    C = np.zeros([len(n), len(m)])
-    for i in range(1, len(n)):
-        for j in range(1, len(m)):
-            if m[i] == mm[j]:
+
+    C = np.zeros([z_num, z_num])
+    for i in range(1, z_num):
+        for j in range(1, z_num):
+            if m[i] == m[j]:
                 k = (
-                        2.2698
-                        * pow(-1, int((n[i] + nn[j] - 2 * n[i]) / 2))
-                        * pow((n[i] + 1) * (nn[j] + 1), 0.5)
+                    2.2698
+                    * (-1) ** ((n[i] + n[j] - 2 * n[i]) // 2)
+                    * np.sqrt((n[i] + 1) * (n[j] + 1))
                 )
                 A = S.gamma(14 / 3)
-                a = S.gamma((n[i] + nn[j] - 5 / 3) / 2)
-                B = pow(2, 14 / 3)
-                b = S.gamma((n[i] - nn[j] + 17 / 3) / 2)
-                c = S.gamma((nn[j] - n[i] + 17 / 3) / 2)
-                d = S.gamma((n[i] + nn[j] + 23 / 3) / 2)
-                C[i, j] = pow(Dr0, 5 / 3) * k * a * A / b / c / d / B
-            else:
-                C[i, j] = 0
-                continue
+                a = S.gamma((n[i] + n[j] - 5 / 3) / 2)
+                B = 2 ** (14 / 3)
+                b = S.gamma((n[i] - n[j] + 17 / 3) / 2)
+                c = S.gamma((n[j] - n[i] + 17 / 3) / 2)
+                d = S.gamma((n[i] + n[j] + 23 / 3) / 2)
+                C[i, j] = Dr0 ** (5 / 3) * k * a * A / (b * c * d * B)
+
+    # SVD-based sampling
     u, s, v = la.svd(C[1:, 1:])
     rand = np.random.normal(size=z_num - 1)
-    B = np.sqrt(s) * rand
-    A = np.dot(u, B)
+    A = np.dot(u, np.sqrt(s) * rand)
 
-    zernike = []
-    one = np.array([1])
-    zernike[:] = one.astype("float64")
+    # Insert piston = 1.0
+    zernike = np.zeros(z_num)
+    zernike[0] = 1.0
     zernike[1:] = A
 
     return zernike

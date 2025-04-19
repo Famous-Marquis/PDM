@@ -5,27 +5,49 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 from tensorflow.signal import fft2d, fftshift, ifft2d, ifftshift
 
-def radial_profile_2d_2(data, center=None):
+def radial_profile_2d_2(data, center=None, nbins=None):
+    """
+    对二维结构函数进行环形平均，得到一维结构函数。
+    参数:
+        data: 2D numpy array，相位结构函数
+        center: 环平均的中心 (cx, cy)，默认为图像中心
+        nbins: 半径的分 bin 数量，越大越精细
+    返回:
+        r_bin_centers: 每个 bin 的中心半径
+        radial_mean: 每个 bin 对应的平均值
+    """
     N = data.shape[0]
     if center is None:
         center = (N / 2, N / 2)
     cx, cy = center
 
     # 生成径向坐标
-    x, y = np.indices((N, N))
+    y, x = np.indices(data.shape)
     r = np.sqrt((x - cx) ** 2 + (y - cy) ** 2)
 
-    # 找到唯一的r值，并排序
-    r_idx = np.unique(r)
+    # 设置 bin
+    if nbins is None:
+        nbins = N//10
+    r_max = np.max(r)
+    r_bins = np.linspace(0, r_max, nbins + 1)
+    r_bin_centers = 0.5 * (r_bins[:-1] + r_bins[1:])
 
-    # 计算径向平均值
-    radial_mean = []
-    for item in r_idx:
-        mask = (r == item)
-        mean_value = np.mean(data[mask])
-        radial_mean.append(mean_value)
+    # 使用 np.digitize 给每个像素分配一个 bin 索引
+    r_flat = r.ravel()
+    data_flat = data.ravel()
+    bin_indices = np.digitize(r_flat, r_bins) - 1  # digitize返回的是1-based索引
 
-    return r_idx, np.array(radial_mean)
+    # 避免超范围索引
+    valid = (bin_indices >= 0) & (bin_indices < nbins)
+
+    radial_sum = np.bincount(bin_indices[valid], weights=data_flat[valid], minlength=nbins)
+    radial_count = np.bincount(bin_indices[valid], minlength=nbins)
+
+    with np.errstate(divide='ignore', invalid='ignore'):
+        radial_mean = np.true_divide(radial_sum, radial_count)
+        radial_mean[radial_count == 0] = 0  # 避免除以0
+
+    return r_bin_centers, radial_mean
 def ft2(x, delta):
     return fftshift(fft2d(fftshift(x))) * delta ** 2
 def ift2(x, delta_f):
@@ -53,10 +75,10 @@ def plot_struct(z_coes_array):
     for i, z_coes in tqdm(enumerate(z_coes_array), total=z_coes_array.shape[0],desc="computing struct..."):
         scr.set_zernike_coeffients(list(z_coes))
         scr.add_pupil()
-        psf = abs(scr.get_psf())
-        psf = tf.cast(tf.convert_to_tensor(psf), tf.complex128)
+        phi = scr.get_screen()
+        phi = tf.cast(tf.convert_to_tensor(phi), tf.complex128)
         mask = tf.cast(tf.convert_to_tensor(np.ones([SIZE, SIZE])), tf.complex128)
-        strn = abs(str_fcn2_ft(psf, mask, 1)).numpy()
+        strn = abs(str_fcn2_ft(phi, mask, 1)).numpy()
         # plt.imshow(strn)
         # ================================
         # 1) 假设已有 2D 相位结构函数 Dphi_2d

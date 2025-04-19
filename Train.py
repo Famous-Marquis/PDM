@@ -10,6 +10,7 @@ from tensorflow import keras
 from Diffusion import DDPM
 from Model import FCMean, FCCov
 from aberration import ZERNIKE_NUMS
+from config import MODEL_CONFIG
 from generate_data import generate_data
 from plot_struct import plot_struct
 
@@ -96,7 +97,7 @@ class DDPMMonitor(keras.callbacks.Callback):
         plt.ylabel("Frechet distance")
         plt.show()
         plt.close(fig1)
-        maxlen = min(100, self.real_data.shape[0])
+        maxlen = min(1000, self.real_data.shape[0])
         #  绘制反向扩散过程
         x_T = tf.random.normal(shape=(maxlen, ZERNIKE_NUMS))
         x_0_eval = self.model.show_denoise(x_T)
@@ -223,3 +224,12 @@ class DDPMTrainer:
         )
 
         self._plot_loss(history)
+
+if __name__ == '__main__':
+    trainer = DDPMTrainer(model_config=MODEL_CONFIG)
+    tfdataset,datamatrix=trainer.load_data(64)
+    D_phi,r_over_r0=plot_struct(datamatrix[:1000])
+    plt.plot(r_over_r0,D_phi)
+    plt.show()
+
+

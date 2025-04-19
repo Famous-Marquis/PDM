@@ -11,9 +11,8 @@ if __name__ == '__main__':
     # fd = Frechet_distance(x, y)
     # print(f"FID: {fd}")
     DDPM_trainer = DDPMTrainer(model_config=MODEL_CONFIG)
-
     DDPM_trainer.ddpm.build(input_shape=(MODEL_CONFIG["d_model"],))
-    DDPM_trainer.train(epochs=1)
+    DDPM_trainer.train()
     DDPM_trainer.summary()
 
     gan_helper=GANHelper()

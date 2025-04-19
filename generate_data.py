@@ -242,7 +242,7 @@ def generate_data(length_per_Dr0, Dr0_range, parallel_processors=2, nums_Dr0=2):
 
 
 if __name__ == "__main__":
-    # generate_data(length_per_Dr0=250, nums_Dr0=12, Dr0_range=1)
-    pkl = pd.read_pickle("./Datasets/merged_data.pkl")
-    gen_img_label(pkl,'real')
+    generate_data(length_per_Dr0=2500, nums_Dr0=2, Dr0_range=10)
+    # pkl = pd.read_pickle("./Datasets/merged_data.pkl")
+    # gen_img_label(pkl,'real')
     # gen_data((25, 1, [5, 6], 1, 1))

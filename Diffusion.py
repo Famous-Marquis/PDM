@@ -20,7 +20,8 @@ def extract(v, t, x_shape):
     t = tf.cast(t, tf.int32)
     out = tf.gather(v, t - 1, axis=0)
     out = tf.cast(out, tf.float32)  # 转换为浮点类型
-
+    while len(out.shape) < len(x_shape):
+        out = tf.expand_dims(out, -1)
     # 直接广播到目标形状
     out = tf.broadcast_to(out, x_shape)  # 广播到目标形状
 
@@ -94,8 +95,8 @@ class DDPM(keras.Model):
         if self.predict_cov:
             self.cov_optimizer = keras.optimizers.Adam(lr=lr_schedule)
 
-            self.L_t_record = np.zeros([self.T, 10], dtype=float)
-            # (协方差)todo: 完善Lvlb的存储与更新
+            # self.L_t_record = np.zeros([self.T, 10], dtype=float)
+
         else:
             self.cov_optimizer = None
 
@@ -218,7 +219,8 @@ class DDPM(keras.Model):
     def denoise_step(self, x_t, t):
         coeff1 = extract(self.one_div_sqrt_alpha, t, x_t.shape)
         coeff2 = extract(self.beta_div_sqrt_one_minus_alpha_bar, t, x_t.shape)
-        coeff3 = extract(self.beta_tilde, t, x_t.shape)
+        # todo: beta or beta_tilde
+        coeff3 = extract(self.beta, t, x_t.shape)
         eps_pred = self.model(x_t, t)
 
         # 使用 tf.cond 替代 if-else
@@ -277,7 +279,7 @@ class DDPM(keras.Model):
                     print("Denoise process plot successfully saved")
         return x_t
 
-
+# def
 # class GaussianDiffusionSampler(keras.Model):
 #     def __init__(self, model, beta_1, beta_T, T, cosine_schedule=False, model_v=None, ):
 #         super(GaussianDiffusionSampler, self).__init__()
