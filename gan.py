@@ -398,7 +398,7 @@ class GANHelper:
                 layers.Dense(128),
                 layers.LeakyReLU(alpha=0.2),
                 # layers.Conv2D(1, (7, 7), padding="same", activation="sigmoid"),
-                layers.Dense(self.zernike_dim, activation="tanh"),
+                layers.Dense(self.zernike_dim),
             ],
             name="generator",
         )

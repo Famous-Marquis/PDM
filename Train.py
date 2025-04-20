@@ -61,7 +61,7 @@ def Frechet_distance(x, y, epsilon=1e-6):
 
     diff_mean = mean_x - mean_y
     FD = diff_mean.dot(diff_mean) + trace
-    return FD
+    return np.maximum(FD, 0.0)
 
 
 class DDPMMonitor(keras.callbacks.Callback):

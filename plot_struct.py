@@ -20,7 +20,7 @@ def radial_profile_2d_2(data, center=None, nbins=None):
     if center is None:
         center = (N / 2, N / 2)
     cx, cy = center
-
+    #todo: 极坐标变换
     # 生成径向坐标
     y, x = np.indices(data.shape)
     r = np.sqrt((x - cx) ** 2 + (y - cy) ** 2)

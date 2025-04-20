@@ -2,7 +2,7 @@
 默认支持400维zernike系数
 ZM和ZN是zernike系数的索引，其中ZM的索引有两种表示方式，根据需要取用
 """
-CACHE_DIR="./cache"
+CACHE_DIR = "./cache"
 ZERNIKE_NUMS = 66
 SCREEN_SIZE = 224
 ZN = [
@@ -1213,13 +1213,14 @@ ZM = [
     21,
     21,
 ]
-from typing import Literal
-import numpy as np
-from matlab import meshgrid, cart2pol, ft2, ift2, randn
-import matplotlib.pyplot as plt
-from scipy import optimize
-from math import factorial
 import os
+from math import factorial
+from typing import Literal
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+from matlab import meshgrid, cart2pol, ft2, ift2, randn
 
 
 def GenerateZnAndZm(z_num=ZERNIKE_NUMS):
@@ -1300,7 +1301,7 @@ def FtShPhaseScreen(Dr0, N, L0=float("inf"), l0=0):
 ## 计算第i阶的Zernike多项式
 def ZernikePoly(i, r=None, theta=None):
     if np.all(r == None) or np.all(theta == None):
-        x, y = meshgrid(np.linspace(-1, 1, 256))
+        x, y = meshgrid(np.linspace(-1, 1, SCREEN_SIZE))
         theta, r = cart2pol(x, y)
     n, m = ZN[i], ZM[i]
     pupil = r < 1  # type: ignore
@@ -1337,19 +1338,17 @@ def noll_zernike_coeffients(z_num=ZERNIKE_NUMS, Dr0=7):
     C = np.zeros([z_num, z_num])
     for i in range(1, z_num):
         for j in range(1, z_num):
-            if m[i] == m[j]:
+            if m[i] == m[j] and (not (i % 2 == j % 2) or m[i] == 0):
                 k = (
-                    2.2698
-                    * (-1) ** ((n[i] + n[j] - 2 * n[i]) // 2)
-                    * np.sqrt((n[i] + 1) * (n[j] + 1))
+                        2.2698
+                        * (-1) ** ((n[i] + n[j] - 2 * m[i]) / 2)
+                        * np.sqrt((n[i] + 1) * (n[j] + 1))
                 )
-                A = S.gamma(14 / 3)
                 a = S.gamma((n[i] + n[j] - 5 / 3) / 2)
-                B = 2 ** (14 / 3)
                 b = S.gamma((n[i] - n[j] + 17 / 3) / 2)
                 c = S.gamma((n[j] - n[i] + 17 / 3) / 2)
                 d = S.gamma((n[i] + n[j] + 23 / 3) / 2)
-                C[i, j] = Dr0 ** (5 / 3) * k * a * A / (b * c * d * B)
+                C[i, j] = Dr0 ** (5 / 3) * k * a / (b * c * d)
 
     # SVD-based sampling
     u, s, v = la.svd(C[1:, 1:])
@@ -1388,7 +1387,7 @@ class PhaseScreen:
             self._zpolys = np.load(cache_path)
             assert N == self._zpolys[0].shape[0] == self._zpolys[0].shape[1]
         except:
-            print("load cache file fails, init zpolys all over:\n znum={},N={}".format(znum,N))
+            print("load cache file fails, init zpolys all over:\n znum={},N={}".format(znum, N))
             self._zpolys = []
             for i in range(znum):
                 self._zpolys.append(ZernikePoly(i, self.r, self.theta))
@@ -1630,7 +1629,13 @@ class PhaseScreen:
 
 
 if __name__ == "__main__":
-    N = 256
-    ph = FtPhaseScreen(1, N)
-    z = PhaseScreen(N=64)
-    z.fit(ph)
+    # N = 256
+    # ph = FtPhaseScreen(1, N)
+    # z = PhaseScreen(N=64)
+    # z.fit(ph)
+    ps=PhaseScreen()
+    ps.simulate_turbulence(Dr0=15)
+    phi=ps.get_screen()
+    plt.imshow(phi)
+    plt.show()
+    print(phi)
