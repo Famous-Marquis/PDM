@@ -97,7 +97,7 @@ class DDPMMonitor(keras.callbacks.Callback):
         plt.ylabel("Frechet distance")
         plt.show()
         plt.close(fig1)
-        maxlen = min(1000, self.real_data.shape[0])
+        maxlen = min(500, self.real_data.shape[0])
         #  绘制反向扩散过程
         x_T = tf.random.normal(shape=(maxlen, ZERNIKE_NUMS))
         x_0_eval = self.model.show_denoise(x_T)
@@ -117,7 +117,7 @@ class DDPMMonitor(keras.callbacks.Callback):
         plt.savefig("./SampledImgs/DDPM_struct1.png", dpi=300)
         plt.close(fig2)
         # 随机绘制多个原始样本与生成样本
-        fig,axes = plt.subplots(3,3,figsize=(10,5))
+        fig,axes = plt.subplots(6,6,figsize=(10,5))
         for i,ax in enumerate(axes.flat):
             bar=ax.imshow(x_0_eval[i][None,:],aspect='auto',cmap='viridis')
             fig.colorbar(bar, ax=ax,orientation='vertical')
@@ -228,8 +228,8 @@ class DDPMTrainer:
 if __name__ == '__main__':
     trainer = DDPMTrainer(model_config=MODEL_CONFIG)
     tfdataset,datamatrix=trainer.load_data(64)
-    D_phi,r_over_r0=plot_struct(datamatrix[:1000])
-    plt.plot(r_over_r0,D_phi)
+    D_phi,r_over_r0=plot_struct(datamatrix[:100])
+    plt.plot(D_phi,r_over_r0)
     plt.show()
 
 

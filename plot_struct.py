@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 from tensorflow.signal import fft2d, fftshift, ifft2d, ifftshift
 
-def radial_profile_2d_2(data, center=None, nbins=None):
+def radial_profile_2d_2(data, r,center=None, nbins=None):
     """
     对二维结构函数进行环形平均，得到一维结构函数。
     参数:
@@ -20,15 +20,13 @@ def radial_profile_2d_2(data, center=None, nbins=None):
     if center is None:
         center = (N / 2, N / 2)
     cx, cy = center
-    #todo: 极坐标变换
-    # 生成径向坐标
-    y, x = np.indices(data.shape)
-    r = np.sqrt((x - cx) ** 2 + (y - cy) ** 2)
 
+    # 只对r<1做环平均
+    mask=r<1
     # 设置 bin
     if nbins is None:
         nbins = N//10
-    r_max = np.max(r)
+    r_max = np.max(r[mask])
     r_bins = np.linspace(0, r_max, nbins + 1)
     r_bin_centers = 0.5 * (r_bins[:-1] + r_bins[1:])
 
@@ -49,6 +47,11 @@ def radial_profile_2d_2(data, center=None, nbins=None):
 
     return r_bin_centers, radial_mean
 def ft2(x, delta):
+    try:
+        fftshift(fft2d(fftshift(x))) * delta ** 2
+    except:
+        x=tf.cast(x, tf.complex128)
+        delta=tf.cast(delta, tf.complex128)
     return fftshift(fft2d(fftshift(x))) * delta ** 2
 def ift2(x, delta_f):
     N = x.shape[0]
@@ -64,21 +67,22 @@ def str_fcn2_ft(ph, mask, delta):
     delta_f = 1 / (N * delta)
     w2 = ift2(W * tf.math.conj(W), delta_f)
     sw = tf.cast(tf.math.real(S * tf.math.conj(W)) - tf.abs(P) ** 2, tf.complex128)
-    D = (2 * ift2(sw, delta_f))
-    # / w2 * mask)
+    D = (2 * ift2(sw, delta_f))/ w2 * mask
     return D
-
+def str_cont(w,ph):
+    return 2*w**2*(1-ph)
 def plot_struct(z_coes_array):
     SIZE = 256
     scr = PhaseScreen(N=SIZE)
-
+    r=scr.r
     for i, z_coes in tqdm(enumerate(z_coes_array), total=z_coes_array.shape[0],desc="computing struct..."):
         scr.set_zernike_coeffients(list(z_coes))
         scr.add_pupil()
-        phi = scr.get_screen()
-        phi = tf.cast(tf.convert_to_tensor(phi), tf.complex128)
-        mask = tf.cast(tf.convert_to_tensor(np.ones([SIZE, SIZE])), tf.complex128)
-        strn = abs(str_fcn2_ft(phi, mask, 1)).numpy()
+        ph = scr.get_screen()
+        ph = tf.cast(tf.convert_to_tensor(ph), tf.complex128)
+
+        mask = tf.cast(tf.convert_to_tensor(r<1), tf.complex128)
+        strn = abs(str_fcn2_ft(ph, mask, 1)).numpy()
         # plt.imshow(strn)
         # ================================
         # 1) 假设已有 2D 相位结构函数 Dphi_2d
@@ -86,7 +90,7 @@ def plot_struct(z_coes_array):
         Dphi_2d = strn  # 你实际应使用真正的结构函数数据
 
         # 2) 对 2D 数组做环平均
-        radii_pix, Dphi_1d = radial_profile_2d_2(Dphi_2d)
+        radii_pix, Dphi_1d = radial_profile_2d_2(Dphi_2d,r)
         if i == 0:
             Dphi_1ds = np.zeros([z_coes_array.shape[0], Dphi_1d.shape[0]])
         Dphi_1ds[i] = Dphi_1d
@@ -95,8 +99,8 @@ def plot_struct(z_coes_array):
     assert Dphi_1d_mean.shape == Dphi_1d.shape, "形状有误"
     # 3) 转换为 r/r0
     #    假设 1个像素 = 1个长度单位(可根据实际需求改成: r_phys = radii_pix * pixel_scale)
-    r0 = 25  # 示例: 设定 Fried 参数 r0 = 10 (与像素同单位)
-    r_over_r0 = radii_pix / r0
+    r0 = 1  # 示例: 设定 Fried 参数 r0 = 10 (与像素同单位)
+    r_over_r0 = radii_pix / 1
     return Dphi_1d_mean,r_over_r0
 
     # 4) 绘图
@@ -111,6 +115,33 @@ def plot_struct(z_coes_array):
     # plt.legend()
     # plt.show()
 if __name__ == "__main__":
+
+    ps=PhaseScreen(N=256)
+    ps.simulate_turbulence(15)
+    ph=ps.get_screen()
+    l=16
+    N=256
+    delta=l/N
+    x=np.linspace(-N/2,N/2)*delta
+    x,y = np.meshgrid(x,x)
+    w=2
+    F=1/l
+    mask=np.ones_like(ph)
+    D=str_fcn2_ft(ph,mask,1)
+    D_cont=str_cont(w,ph)
+    plt.imshow(np.real(D))
+    plt.colorbar()
+    plt.show()
+    plt.imshow(np.real(D_cont))
+    plt.colorbar()
+    plt.show()
+
+    # plt.plot(r_over_r0, Dphi_1d_mean, 'bo-', label='Radial Dphi(r)')
+    # plt.xlabel(r'$r / r_0$')
+    # plt.ylabel(r'$D_\phi(r)$')
+    # plt.title('1D radial structure function from 2D data')
+    # plt.grid(True)
+    # plt.legend()
     r0 = 0.2  # 示例: Fried 参数
     r_max = 1.0  # 例如你的口径大小或更大范围
 
@@ -128,11 +159,4 @@ if __name__ == "__main__":
     plt.title('Kolmogorov $D_\phi(r)$ vs. $r/r_0$')
     plt.legend()
     plt.grid(True)
-
-    # plt.plot(r_over_r0, Dphi_1d_mean, 'bo-', label='Radial Dphi(r)')
-    # plt.xlabel(r'$r / r_0$')
-    # plt.ylabel(r'$D_\phi(r)$')
-    # plt.title('1D radial structure function from 2D data')
-    # plt.grid(True)
-    # plt.legend()
     plt.savefig("./SampledImgs/Kolmogorov.png")

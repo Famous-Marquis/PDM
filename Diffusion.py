@@ -45,7 +45,6 @@ class DDPM(keras.Model):
         self.loss_tracker = keras.metrics.Mean(name='loss')
         if self.cosine_schedule:
             # 余弦调度β
-            # todo: 对照论文检查对应系数，并且在Dubug模式下利用断点，查看每一个变量的值。
             """一般来说，系数总体呈现统一的趋势。若发现某个单调性变化之处或“inf”“nan”,很有可能出错
             """
             t = tf.range(1, T + 1 + 5)
@@ -279,12 +278,23 @@ class DDPM(keras.Model):
                     print("Denoise process plot successfully saved")
         return x_t
 
-# def
-# class GaussianDiffusionSampler(keras.Model):
-#     def __init__(self, model, beta_1, beta_T, T, cosine_schedule=False, model_v=None, ):
-#         super(GaussianDiffusionSampler, self).__init__()
-#         self.model = model
-#
-#     def forward(self, x_T):
-#         ...
-#     # 可能用不上了
+    @tf.function
+    def generate_samples(self, sample_num):
+        batch_size = 100
+        latent_dim = ZERNIKE_NUMS
+        num_steps = sample_num // batch_size + 1
+        sample_num = num_steps * batch_size
+
+        # 创建一个 TensorArray 来存储生成的样本
+        samples = tf.TensorArray(dtype=tf.float32, size=num_steps, dynamic_size=False)
+        for step in range(num_steps):
+            noise = tf.random.normal(shape=(batch_size, latent_dim))
+            generated_samples = self.denoise(noise)
+            samples = samples.write(step, generated_samples)
+
+        # 将 TensorArray 转换为一个张量
+        samples = samples.stack()
+        samples = tf.reshape(samples, (sample_num, -1))
+        return samples
+
+

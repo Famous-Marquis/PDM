@@ -80,7 +80,19 @@ class GAN(keras.Model):
         self.d_optimizer = d_optimizer
         self.g_optimizer = g_optimizer
         self.loss_fn = loss_fn
-
+    @tf.function
+    def generate_samples(self,sample_num):
+        batch_size=100
+        num_steps = sample_num // batch_size+1
+        sample_num = num_steps * batch_size
+        samples = tf.TensorArray(tf.float32, size=num_steps, dynamic_size=False)
+        for step in range(num_steps):
+            noise = tf.random.normal(shape=(batch_size, self.latent_dim))
+            generated_samples = self.generator(noise)
+            samples = samples.write(step, generated_samples)
+        samples = samples.stack()
+        samples=tf.reshape(samples, (sample_num, -1))
+        return samples
     def train_step(self, real_z: tf.Tensor):
         """
         进行单步训练，更新判别器和生成器的权重。
@@ -207,11 +219,11 @@ class GANMonitor(keras.callbacks.Callback):
 
     def on_train_end(self, logs=None):
         # 样本可视化
-        maxlen = min(100, self.real_zernike.shape[0])
+        maxlen = min(500, self.real_zernike.shape[0])
         z = tf.random.normal(shape=(maxlen, self.latent_dim))
         generated_zernike = self.model.generator(z)
         generated_zernike = generated_zernike.numpy()
-        fig, axes = plt.subplots(nrows=3, ncols=3, figsize=(10, 5))
+        fig, axes = plt.subplots(nrows=6, ncols=6, figsize=(10, 5))
         for i, ax in enumerate(axes.flat):
             bar = ax.imshow(generated_zernike[i][None,:], aspect='auto', cmap="viridis")
             fig.colorbar(bar, ax=ax, orientation='vertical')
