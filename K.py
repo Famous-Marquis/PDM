@@ -5,104 +5,135 @@ from sklearn.metrics import pairwise_distances
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.decomposition import PCA
+from matplotlib.patches import Ellipse
+import matplotlib.transforms as transforms
+from scipy.stats import chi2
+
+from Train import frechet_distance
 
 
-def plot_coverage_pca(real_data, fake_data, kmeans, covered_mask):
-    """
-    画出PCA投影下的覆盖热图。
+def get_common_xy_limits(*datasets_2d, margin=0.1):
+    all_data = np.vstack(datasets_2d)
+    x_min, x_max = all_data[:, 0].min(), all_data[:, 0].max()
+    y_min, y_max = all_data[:, 1].min(), all_data[:, 1].max()
+    x_margin = (x_max - x_min) * margin
+    y_margin = (y_max - y_min) * margin
+    return (x_min - x_margin, x_max + x_margin), (y_min - y_margin, y_max + y_margin)
 
-    参数：
-    - real_data: np.ndarray (N_real, D)
-    - fake_data: np.ndarray (N_fake, D)
-    - kmeans: 训练好的KMeans对象（用于获取聚类中心）
-    - covered_mask: bool array, shape=(K,), 标记每个中心是否被覆盖
-    """
-    # 拼接所有数据用于PCA
-    all_data = np.vstack([real_data, fake_data, kmeans.cluster_centers_])
+def add_confidence_ellipse(ax, data, confidence=0.95, color='black', label=None, linestyle='--'):
+    cov = np.cov(data, rowvar=False)
+    mean = np.mean(data, axis=0)
+    vals, vecs = np.linalg.eigh(cov)
+    order = vals.argsort()[::-1]
+    vals, vecs = vals[order], vecs[:, order]
+    chi2_val = chi2.ppf(confidence, df=2)
+    width, height = 2 * np.sqrt(vals * chi2_val)
+    angle = np.degrees(np.arctan2(*vecs[:, 0][::-1]))
+    ellipse = Ellipse(xy=mean, width=width, height=height, angle=angle,
+                      edgecolor=color, facecolor='none', linestyle=linestyle, linewidth=2, label=label)
+    ax.add_patch(ellipse)
 
-    # PCA降维到2D
+def compare_models_with_pca(real_data, gan_data, ddpm_data, confidence=0.95):
+    # 统一 PCA 降维
+    all_data = np.vstack([real_data, gan_data, ddpm_data])
     pca = PCA(n_components=2)
-    all_data_2d = pca.fit_transform(all_data)
+    all_2d = pca.fit_transform(all_data)
+
+    n_real = len(real_data)
+    n_gan = len(gan_data)
+    real_2d = all_2d[:n_real]
+    gan_2d = all_2d[n_real:n_real + n_gan]
+    ddpm_2d = all_2d[n_real + n_gan:]
+
+    xlim, ylim = get_common_xy_limits(real_2d, gan_2d, ddpm_2d)
+
+    # 开始画图
+    fig, axs = plt.subplots(1, 2, figsize=(14, 6), sharex=True, sharey=True)
+    for ax, gen_2d, title, color in zip(
+        axs, [gan_2d, ddpm_2d], ['GAN', 'DDPM'], ['darkorange', 'steelblue']
+    ):
+        ax.scatter(real_2d[:, 0], real_2d[:, 1], s=10, c='gray', alpha=0.4, label='Real')
+        ax.scatter(gen_2d[:, 0], gen_2d[:, 1], s=15, c=color, alpha=0.6, label=title)
+        add_confidence_ellipse(ax, real_2d, confidence, color='gray', label='Real 95% CI')
+        add_confidence_ellipse(ax, gen_2d, confidence, color=color, label=f'{title} 95% CI')
+        ax.set_title(f'{title} vs Real')
+        ax.set_xlim(*xlim)
+        ax.set_ylim(*ylim)
+        ax.set_xlabel('PCA 1')
+        ax.set_ylabel('PCA 2')
+        ax.legend()
+
+    plt.suptitle('PCA Visualization with 95% Confidence Ellipses: GAN vs DDPM', fontsize=14)
+    plt.tight_layout(rect=[0., 0.03, 1., 0.95])
+    plt.show()
+    FD_gan=frechet_distance(real_data, gan_data)
+    FD_ddpm=frechet_distance(real_data, ddpm_data)
+    print(f'FD-GAN:{FD_gan},FD-DDPM:{FD_ddpm}')
+
+def plot_coverage_pca_with_ellipses(
+    real_data, fake_data, kmeans, covered_mask,
+    confidence_level=0.95,  # 椭圆置信度（常用95%或99%）
+    real_style={'color': 'gray', 'alpha': 0.4, 's': 15, 'marker': 'o', 'label': 'Real'},
+    fake_style={'color': 'darkorange', 'alpha': 0.6, 's': 25, 'marker': 'o', 'label': 'Generated'},
+    covered_color='green', uncovered_color='red'
+):
+    # PCA 降维
+    all_data = np.vstack([real_data, fake_data, kmeans.cluster_centers_])
+    pca = PCA(n_components=2)
+    all_2d = pca.fit_transform(all_data)
+
     n_real, n_fake, n_centers = len(real_data), len(fake_data), len(kmeans.cluster_centers_)
+    real_2d = all_2d[:n_real]
+    fake_2d = all_2d[n_real:n_real + n_fake]
+    centers_2d = all_2d[-n_centers:]
 
-    real_2d = all_data_2d[:n_real]
-    fake_2d = all_data_2d[n_real:n_real + n_fake]
-    centers_2d = all_data_2d[-n_centers:]
-
-    # 设置画图风格
+    # 画图
     plt.figure(figsize=(10, 8))
     sns.set(style='whitegrid')
 
-    # 画真实样本
-    plt.scatter(real_2d[:, 0], real_2d[:, 1], c='green', label='Real Samples', alpha=0.5, s=10)
-
-    # 画生成样本
-    plt.scatter(fake_2d[:, 0], fake_2d[:, 1], c='cornflowerblue', label='Generated Samples',
-                alpha=0.6, s=15)
+    # 画样本点
+    plt.scatter(real_2d[:, 0], real_2d[:, 1], **real_style)
+    plt.scatter(fake_2d[:, 0], fake_2d[:, 1], **fake_style)
 
     # 画聚类中心
-    for i, center in enumerate(centers_2d):
-        color = 'green' if covered_mask[i] else 'red'
-        plt.scatter(center[0], center[1], c=color, edgecolors='black', s=100, marker='X',
-                    label='Covered' if (color == 'green' and i == 0) else 'Not Covered' if (
-                                color == 'red' and i == 0) else None)
-    # 图例
-    plt.title('PCA Visualization with Cluster Center Coverage')
-    plt.xlabel('PCA 1')
-    plt.ylabel('PCA 2')
+    for i, (x, y) in enumerate(centers_2d):
+        color = covered_color if covered_mask[i] else uncovered_color
+        plt.scatter(x, y, c=color, s=120, edgecolors='black', marker='X',
+                    label='Covered' if (color == covered_color and i == 0) else
+                          'Uncovered' if (color == uncovered_color and i == 0) else None)
+
+    # 添加置信椭圆
+    def add_ellipse(points, color, label):
+        cov = np.cov(points, rowvar=False)
+        mean = np.mean(points, axis=0)
+
+        # 特征值/向量 → 主轴
+        vals, vecs = np.linalg.eigh(cov)
+        order = vals.argsort()[::-1]
+        vals, vecs = vals[order], vecs[:, order]
+
+        # 椭圆轴长根据置信度的卡方值确定
+        chi2_val = chi2.ppf(confidence_level, df=2)
+        width, height = 2 * np.sqrt(vals * chi2_val)
+
+        angle = np.degrees(np.arctan2(*vecs[:, 0][::-1]))
+
+        ellip = Ellipse(xy=mean, width=width, height=height, angle=angle,
+                        edgecolor=color, facecolor='none', linewidth=2, label=label, linestyle='--')
+        plt.gca().add_patch(ellip)
+
+    add_ellipse(real_2d, color=real_style['color'], label=f"{real_style['label']} 95% CI")
+    add_ellipse(fake_2d, color=fake_style['color'], label=f"{fake_style['label']} 95% CI")
+
+    plt.title(f'PCA Visualization with {int(confidence_level*100)}% Confidence Ellipses')
+    plt.xlabel('PCA Component 1')
+    plt.ylabel('PCA Component 2')
     plt.legend()
     plt.tight_layout()
     plt.show()
 
 
-def compute_coverage(real_data, fake_data, K=50, delta=None):
-    """
-    计算生成数据对真实数据聚类中心的覆盖率（mode coverage）
 
-    参数:
-    - real_data: np.ndarray, shape (N_real, D), 真实样本（如Zernike系数）
-    - fake_data: np.ndarray, shape (N_fake, D), 生成样本
-    - K: int, 聚类中心个数
-    - delta: float or None, 距离阈值，若为None将自动设定
-
-    返回:
-    - coverage_rate: float, 覆盖率（0~1）
-    - covered_clusters: int, 被覆盖的聚类中心个数
-    - delta: 使用的距离阈值
-    """
-    assert real_data.shape[1] == fake_data.shape[1], "维度不一致"
-
-    # Step 1: 对真实样本进行 KMeans 聚类
-    kmeans = KMeans(n_clusters=K, random_state=0)
-    kmeans.fit(real_data)
-    centers = kmeans.cluster_centers_  # shape: (K, D)
-
-    # Step 2: 计算每个中心与所有生成样本之间的欧几里得距离
-    dists = pairwise_distances(centers, fake_data, metric='euclidean')  # shape: (K, N_fake)
-
-    # Step 3: 自动设定 delta（默认是真实数据的平均距离的 10%）
-    if delta is None:
-        real_pairwise_dists = pairwise_distances(real_data, metric='euclidean')
-        avg_dist = np.mean(real_pairwise_dists)
-        delta = 0.1 * avg_dist
-
-    # Step 4: 判断是否被覆盖
-    covered = (dists < delta).any(axis=1)  # 每行表示某中心是否被至少一个生成样本覆盖
-    coverage_rate = np.sum(covered) / K
-    print(f"覆盖率: {coverage_rate:.3f} ({np.sum(covered)}/{K} 个簇), 使用的阈值 delta = {delta:.4f}")
-    kmeans = KMeans(n_clusters=K, random_state=0)
-    kmeans.fit(real_data)
-    centers = kmeans.cluster_centers_
-
-    # 2. 计算中心与 fake 样本的距离判断覆盖
-
-    dists = pairwise_distances(centers, fake_data)
-    delta = 0.1 * np.mean(pairwise_distances(real_data))
-    covered_mask = (dists < delta).any(axis=1)
-
-    # 3. 画图
-    plot_coverage_pca(real_data, fake_data, kmeans, covered_mask)
-    return coverage_rate, np.sum(covered), delta
 if __name__ == '__main__':
     # 假设你有 TensorFlow 张量
     real_tensor = tf.random.normal(shape=(1000, 15))  # 1000 个真实样本，15维Zernike
@@ -112,7 +143,6 @@ if __name__ == '__main__':
     real_data = real_tensor.numpy()
     fake_data = fake_tensor.numpy()
     # 计算覆盖率
-    coverage, covered_k, used_delta = compute_coverage(real_data, fake_data, K=50)
 
 
 

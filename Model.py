@@ -56,7 +56,6 @@ class FCMean(keras.Model):
                                          kernel_initializer=initializers.RandomNormal(mean=0.0,
                                                                                       stddev=0.05)))
         self._layers.append(layers.LayerNormalization())
-        # todo: 考虑将最后一个输出层换作‘tanh’
         self._layers.append(layers.LeakyReLU())
 
         # self.attn=_layers.Attention()

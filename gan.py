@@ -8,7 +8,7 @@ from tensorflow import keras
 from tensorflow.keras import layers
 from tensorflow.keras.optimizers.schedules import ExponentialDecay
 
-from Train import Frechet_distance
+from Train import frechet_distance
 from config import MODEL_CONFIG
 from plot_struct import plot_struct
 
@@ -212,7 +212,7 @@ class GANMonitor(keras.callbacks.Callback):
             shape=(self.real_samples_num, self.latent_dim)
         )
         generated_zernike = self.model.generator(random_latent_vectors)
-        fd = Frechet_distance(generated_zernike.numpy(), self.real_zernike)
+        fd = frechet_distance(generated_zernike.numpy(), self.real_zernike)
         self.fds.append(fd)
         logs["val_loss"] = fd
         print("epoch {} FD : {}".format(epoch, fd))

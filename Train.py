@@ -1,67 +1,63 @@
 import os
-
-import numpy as np
 import pandas
 import tensorflow as tf
 from matplotlib import pyplot as plt
-from scipy.linalg import sqrtm
 from tensorflow import keras
-
 from Diffusion import DDPM
 from Model import FCMean, FCCov
 from aberration import ZERNIKE_NUMS
 from config import MODEL_CONFIG
 from generate_data import generate_data
 from plot_struct import plot_struct
+import numpy as np
+from scipy.linalg import sqrtm
 
 
-def Frechet_distance(x, y, epsilon=1e-6):
+def frechet_distance(x, y, epsilon=1e-6, verbose=True):
+    assert isinstance(x, np.ndarray)
+    assert isinstance(y, np.ndarray)
+
     def calculate_mean_cov(z):
-        assert isinstance(z, np.ndarray)
         mean = np.mean(z, axis=0)
         cov = np.cov(z, rowvar=False)
         return mean, cov
 
-    def check_nonsensitive_eigenvalues(l):
-        nonpos = l < 0
-        if np.any(nonpos):
-            print("Non-positive eigenvalues, FID may not work")
-            l[nonpos] = 0
-        return l
+    # Step 1: 均值和协方差
+    mu_x, cov_x = calculate_mean_cov(x)
+    mu_y, cov_y = calculate_mean_cov(y)
 
-    assert isinstance(x, np.ndarray)
-    assert isinstance(y, np.ndarray)
-
-    mean_x, cov_x = calculate_mean_cov(x)
-    mean_y, cov_y = calculate_mean_cov(y)
-
-    # 添加正则化项以确保协方差矩阵的正定性
+    # Step 2: 添加正则项以增强协方差稳定性
     cov_x += np.eye(cov_x.shape[0]) * epsilon
     cov_y += np.eye(cov_y.shape[0]) * epsilon
 
-    l1, v1 = np.linalg.eigh(cov_x)
-    l2, v2 = np.linalg.eigh(cov_y)
-    l1 = check_nonsensitive_eigenvalues(l1)
-    l2 = check_nonsensitive_eigenvalues(l2)
-
-    sqrt_cov_x = v1 @ np.diag(np.sqrt(l1)) @ v1.T
-    sqrt_cov_y = v2 @ np.diag(np.sqrt(l2)) @ v2.T
-
-    # 计算协方差矩阵的乘积
-    cov_prod = sqrt_cov_x @ cov_y @ sqrt_cov_y
-
-    # 使用scipy.linalg.sqrtm计算矩阵的平方根
+    # Step 3: 矩阵乘积开方计算
+    cov_prod = cov_x @ cov_y
     sqrt_prod = sqrtm(cov_prod)
 
-    # 确保sqrt_prod是实数矩阵
+    # Step 4: 如果有复数误差，取实部 + 强制对称化
     if np.iscomplexobj(sqrt_prod):
+        if verbose:
+            print("Warning: sqrtm produced complex values. Taking real part.")
         sqrt_prod = np.real(sqrt_prod)
 
-    trace = np.trace(cov_x + cov_y - 2 * sqrt_prod)
+    sqrt_prod = (sqrt_prod + sqrt_prod.T) / 2.0  # 强制对称化（关键）
 
-    diff_mean = mean_x - mean_y
-    FD = diff_mean.dot(diff_mean) + trace
-    return np.maximum(FD, 0.0)
+    # Step 5: 检查 sqrt_prod 是否异常
+    if not np.all(np.isfinite(sqrt_prod)):
+        raise ValueError("Matrix sqrtm failed: contains NaN or Inf")
+
+    # Step 6: 计算 trace 和最终的 FID
+    diff = mu_x - mu_y
+    trace_term = np.trace(cov_x + cov_y - 2 * sqrt_prod)
+    fid = diff.dot(diff) + trace_term
+
+    # Step 7: Debug 输出
+    if verbose:
+        print("Mean squared difference:", diff.dot(diff))
+        print("Trace term:", trace_term)
+        print("FID (before clip):", fid)
+
+    return max(fid, 0.0)
 
 
 class DDPMMonitor(keras.callbacks.Callback):
@@ -84,7 +80,7 @@ class DDPMMonitor(keras.callbacks.Callback):
         x_T = tf.random.normal((max_len, self.real_data.shape[1]))
         generated_data = self.model.denoise(x_T)
         generated_data = generated_data.numpy()
-        fd = Frechet_distance(self.real_data[:max_len], generated_data)
+        fd = frechet_distance(self.real_data[:max_len], generated_data)
         self.fds.append(fd)
 
         logs["val_loss"] = fd
