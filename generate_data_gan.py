@@ -9,7 +9,7 @@ from tqdm import tqdm
 from aberration import PhaseScreen
 from beam import LG_mode
 
-DATADIR = "../data/gan/"
+DATADIR = "../batch_data/gan/"
 mode_list = [
     (1),
     (-2),
@@ -123,7 +123,7 @@ def gen_data(args: tuple[str, int, str, Union[int, float], int]):
                             ]
                         )
                         pbar.update(1)
-            np.save("../data/gan/{}_gan.npy".format(str(position)), coeffs_stack)
+            np.save("../batch_data/gan/{}_gan.npy".format(str(position)), coeffs_stack)
 
     ps = PhaseScreen(256, 64, "../cache")
     # print("generating...", prefix)

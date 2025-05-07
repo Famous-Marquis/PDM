@@ -80,10 +80,11 @@ class GAN(keras.Model):
         self.d_optimizer = d_optimizer
         self.g_optimizer = g_optimizer
         self.loss_fn = loss_fn
+
     @tf.function
-    def generate_samples(self,sample_num):
-        batch_size=100
-        num_steps = sample_num // batch_size+1
+    def generate_samples(self, sample_num):
+        batch_size = 100
+        num_steps = sample_num // batch_size
         sample_num = num_steps * batch_size
         samples = tf.TensorArray(tf.float32, size=num_steps, dynamic_size=False)
         for step in range(num_steps):
@@ -91,8 +92,9 @@ class GAN(keras.Model):
             generated_samples = self.generator(noise)
             samples = samples.write(step, generated_samples)
         samples = samples.stack()
-        samples=tf.reshape(samples, (sample_num, -1))
+        samples = tf.reshape(samples, (sample_num, -1))
         return samples
+
     def train_step(self, real_z: tf.Tensor):
         """
         进行单步训练，更新判别器和生成器的权重。
@@ -198,7 +200,6 @@ class GANMonitor(keras.callbacks.Callback):
     on_epoch_end : 在每个epoch结束时调用，用于评估生成器的性能。
     """
 
-
     def __init__(self, real_zernike, latent_dim=128):
         self.model: keras.Model  # 当前正在训练的模型，由Keras回调机制自动设置
         self.real_zernike = real_zernike
@@ -225,12 +226,12 @@ class GANMonitor(keras.callbacks.Callback):
         generated_zernike = generated_zernike.numpy()
         fig, axes = plt.subplots(nrows=6, ncols=6, figsize=(10, 5))
         for i, ax in enumerate(axes.flat):
-            bar = ax.imshow(generated_zernike[i][None,:], aspect='auto', cmap="viridis")
+            bar = ax.imshow(generated_zernike[i][None, :], aspect='auto', cmap="viridis")
             fig.colorbar(bar, ax=ax, orientation='vertical')
             ax.set_yticks([])
         fig.suptitle('GAN generated samples')
         fig.tight_layout()
-        plt.savefig("./SampledImgs/GAN_samples1.png", dpi=300)
+        plt.savefig("./SampledImgs/GAN_samples.png", dpi=300)
         plt.close(fig)
         # FD绘图
         fig1 = plt.figure()
@@ -241,11 +242,11 @@ class GANMonitor(keras.callbacks.Callback):
         plt.close(fig1)
 
         # struct绘制
-        Dphi_1d_mean_eval, r_over_r0_eval = plot_struct(generated_zernike)
-        Dphi_1d_mean, r_over_r0 = plot_struct(self.real_zernike[:maxlen])
+        Dphi_1d_mean_eval, Dphi_1d_std_eval,r_over_r0_eval = plot_struct(generated_zernike)
+        Dphi_1d_mean, Dphi_1d_std,r_over_r0 = plot_struct(self.real_zernike[:maxlen])
 
         fig2 = plt.figure(figsize=(6, 4))
-        plt.plot(r_over_r0, Dphi_1d_mean, 'bo-', label='data $D_\phi(r)$')
+        plt.plot(r_over_r0, Dphi_1d_mean, 'bo-', label='batch_data $D_\phi(r)$')
         plt.plot(r_over_r0_eval, Dphi_1d_mean_eval, 'ro-', label='sampled $D_\phi(r)$')
         plt.xlabel(r'$r / r_0$')
         plt.ylabel(r'$D_\phi(r)$')
@@ -253,7 +254,7 @@ class GANMonitor(keras.callbacks.Callback):
         plt.grid(True)
         plt.legend()
         plt.tight_layout()
-        plt.savefig("./SampledImgs/GAN_struct1.png", dpi=300)
+        plt.savefig("./SampledImgs/GAN_struct.png", dpi=300)
         plt.close(fig2)
 
 
@@ -327,6 +328,7 @@ class GANHelper:
             g_optimizer=tf.keras.optimizers.Adam(learning_rate=generator_lr_schedule),
             loss_fn=keras.losses.BinaryCrossentropy(from_logits=True),
         )
+
     def _load_weights(self):
         if self.model_config["GAN_load_weights"]:
             if os.path.exists(self.ckpt_path + ".index"):
@@ -340,13 +342,12 @@ class GANHelper:
             else:
                 print("No checkpoint found")
 
-    def train(self,epochs=None):
+    def train(self, epochs=None):
         if epochs is None:
             epochs = self.model_config["GAN_epochs"]
-        batch_size=self.model_config["batch_size"]
+        batch_size = self.model_config["batch_size"]
 
-
-        tf_dataset,data_matrix=self.load_data(batch_size)
+        tf_dataset, data_matrix = self.load_data(batch_size)
 
         self._load_weights()
 
@@ -365,19 +366,17 @@ class GANHelper:
 
         return history
 
-
     def load_data(
             self, batch
     ):
-        # prepare test data
+        # prepare test batch_data
         data_series = pandas.read_pickle(self.data_path)
         data_matrix = np.stack(data_series).astype(np.float32)
         dataset = tf.data.Dataset.from_tensor_slices(data_matrix)
         dataset = dataset.shuffle(buffer_size=10 * batch).batch(batch,
                                                                 drop_remainder=True).prefetch(
             tf.data.experimental.AUTOTUNE)
-        return dataset,data_matrix
-
+        return dataset, data_matrix
 
     def build_discriminator(self):
         discriminator = keras.Sequential(
@@ -416,7 +415,6 @@ class GANHelper:
         )
         generator.summary()
         return generator
-
 
 
 if __name__ == "__main__":

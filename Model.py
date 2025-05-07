@@ -42,7 +42,7 @@ class FCMean(keras.Model):
         self.d_model = d_model
         self._layers = []
         # self._layers.append(keras.Input(shape=(d_model,)))
-        self.time_embedding = TimeEmbedding(d_model)
+        self.time_embedding = layers.Embedding(input_dim=1,output_dim=d_model)
         # todo: 考虑调整Leaky ReLU的alpha(可参照GAN的网络结构)
         for units in model_struct:
             self._layers.append(layers.Dense(units, kernel_regularizer=regularizers.l2(0.01),
@@ -77,21 +77,21 @@ class FCCov(keras.Model):
         self.d_model = d_model
         self._layers = []
         # self._layers.append(keras.Input(shape=(d_model,)))
-        self.time_embedding = TimeEmbedding(d_model)
+        self.time_embedding = layers.Embedding(input_dim=1,output_dim=d_model)
         for units in model_struct:
             self._layers.append(layers.Dense(units, kernel_regularizer=regularizers.l2(0.01),
                                              kernel_initializer=initializers.RandomNormal(mean=0.0,
                                                                                           stddev=0.005)))
             self._layers.append(layers.LayerNormalization())
-            self._layers.append(layers.ELU())
+            self._layers.append(layers.LeakyReLU())
             self._layers.append(layers.Dropout(0.2))
 
-        self._layers.append(layers.Dense(1, kernel_regularizer=regularizers.l2(0.01),
+        self._layers.append(layers.Dense(d_model, kernel_regularizer=regularizers.l2(0.01),
                                          kernel_initializer=initializers.RandomNormal(mean=0.0,
                                                                                       stddev=0.005)))
 
         self._layers.append(layers.LayerNormalization())
-        self._layers.append(layers.ELU())
+        self._layers.append(layers.LeakyReLU())
         # self.d5 = _layers.Dropout(0.2)
 
     def call(self, x, t):
@@ -99,9 +99,8 @@ class FCCov(keras.Model):
         x = x + emb
         for layer in self._layers:
             x = layer(x)
-
         # 裁剪，防止协方差为负
-        y = tf.clip_by_value(x, clip_value_min=0.0, clip_value_max=1.0)
+        y = tf.clip_by_value(x, clip_value_min=0., clip_value_max=1.)
         return y
 
 

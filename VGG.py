@@ -7,6 +7,7 @@ from matplotlib import pyplot as plt
 from tensorflow.keras.layers import Conv2D, BatchNormalization, Activation, MaxPool2D, Dropout, \
     Flatten, Dense
 
+
 from generate_data import beam_list
 
 
@@ -147,6 +148,7 @@ class VGG16Trainer:
         self.data_path = self.model_config["VGG_datapath"]
         self.batch_size = model_config["batch_size"]
         self.ckpt_path = model_config["VGG_checkpoint_path"]
+
     def build_model(self):
         self.model.build(input_shape=(self.model_config['batch_size'], 224, 224))
         self.model.summary()
@@ -155,48 +157,71 @@ class VGG16Trainer:
         learning_rate = keras.optimizers.schedules.ExponentialDecay(
             initial_learning_rate=self.model_config['VGG_lr'],
             decay_rate=0.96, decay_steps=100)
-        model.compile(optimizer=keras.optimizers.Adam(learning_rate=learning_rate),
+        self.model.compile(optimizer=keras.optimizers.Adam(learning_rate=learning_rate),
                       loss=keras.losses.SparseCategoricalCrossentropy(from_logits=False),
                       metrics=['sparse_categorical_accuracy'])
-    def plot_history(self, history_dict):
+
+    def plot_history(self):
+
         fig, axes = plt.subplots(1, 2)
-        axes[0].plot(history_dict['loss'], label='train_loss')
-        axes[0].plot(history_dict['val_loss'], label='test_loss')
+        axes[0].plot(self.history_dict['loss'], label='train_loss')
+        axes[0].plot(self.history_dict['val_loss'], label='test_loss')
         axes[0].legend()
         axes[0].title.set_text('loss')
 
-        axes[1].plot(history_dict['sparse_categorical_accuracy'], label='train_acc')
-        axes[1].plot(history_dict['val_sparse_categorical_accuracy'], label='test_acc')
+        axes[1].plot(self.history_dict['sparse_categorical_accuracy'], label='train_acc')
+        axes[1].plot(self.history_dict['val_sparse_categorical_accuracy'], label='test_acc')
         axes[1].legend()
         axes[1].title.set_text('acc')
+        plt.savefig('./Record/VGG16_history.png',dpi=300)
 
-        plt.savefig('./Record/VGG16_history.png')
-
-    def train_model(self,epochs):
+    def train_model(self, epochs):
         self.build_model()
         self.compile_model()
         cp_callback = ModelCheckpoint(filepath=self.ckpt_path, save_best_only=True,
                                       save_weights_only=True, )
         if os.path.exists(self.ckpt_path + '.index'):
             print("model load weights")
-            model.load_weights(self.ckpt_path)
+            self.model.load_weights(self.ckpt_path)
         else:
             print("No model weights")
         data = np.load(self.model_config["VGG_datapath"])
         imgs_train, labels_train = data["imgs"], data["labels"]
         imgs_val, labels_val = ..., ...
-        history=model.fit(imgs_train, labels_train, batch_size=self.batch_size, epochs=epochs,
-                  validation_data=(imgs_val, labels_val),callbacks=[cp_callback])
-        history_dict = history.history
+        history = self.model.fit(imgs_train, labels_train, batch_size=self.batch_size, epochs=epochs,
+                            validation_data=(imgs_val, labels_val), callbacks=[cp_callback])
+        self.history_dict = history.history
 
     # VGG比较简单，可以直接用keras封装好的函数库
-
-
-if __name__ == "__main__":
+def train_VGG(data_name,test_data_name,name=''):
+    data_matrix = np.load(f'./Datasets/VGG_Datasets_{data_name}.npz')
     model = VGG16()
     model.build((64, 224, 224))
     model.summary()
-    model.compile(optimizer=keras.optimizers.Adam(0.001),
+    scheduler = keras.optimizers.schedules.ExponentialDecay(0.001, decay_steps=1000,
+                                                            decay_rate=0.96)
+    model.compile(optimizer=keras.optimizers.Adam(scheduler),
                   loss=keras.losses.SparseCategoricalCrossentropy(from_logits=False),
                   metrics=['sparse_categorical_accuracy'])
-    model.fit()
+    ckpt_callback = keras.callbacks.ModelCheckpoint(f'./Checkpoints/VGG_16_{data_name}.ckpt',
+                                                    save_best_only=True, save_weights_only=True)
+    data_test_matrix = np.load(f'./Datasets/VGG_Datasets_{test_data_name}.npz')
+    imgs_test, labels_test = data_test_matrix["imgs"], data_test_matrix["labels"]
+    imgs_train, labels_train = data_matrix["imgs"], data_matrix["labels"]
+    history = model.fit(imgs_train, labels_train, batch_size=64, epochs=50,
+                        validation_data=(imgs_test, labels_test), shuffle=True,
+                        callbacks=ckpt_callback)
+    history_dict = history.history
+    fig, axes = plt.subplots(1, 2,figsize=(12,4))
+    axes[0].plot(history_dict['loss'], label='train_loss')
+    axes[0].plot(history_dict['val_loss'], label='test_loss')
+    axes[0].legend()
+    axes[0].title.set_text('loss')
+
+    axes[1].plot(history_dict['sparse_categorical_accuracy'], label='train_acc')
+    axes[1].plot(history_dict['val_sparse_categorical_accuracy'], label='test_acc')
+    axes[1].legend()
+    axes[1].title.set_text('acc')
+    plt.savefig(f'./Record/VGG16_history{name}.png', dpi=300)
+if __name__ == "__main__":
+    ...

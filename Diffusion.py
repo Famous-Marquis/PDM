@@ -1,8 +1,9 @@
+import math
+
 import numpy as np
 import tensorflow as tf
 from matplotlib import pyplot as plt
 from tensorflow import keras
-from tensorflow.keras import losses, optimizers
 
 from aberration import ZERNIKE_NUMS
 
@@ -28,10 +29,18 @@ def extract(v, t, x_shape):
     return out
 
 
+def get_weight(t, alpha_bars):
+    # t: shape [batch_size]
+    # alpha_bars: shape [T+1], precomputed ᾱ_t
+    alpha_t = tf.gather(alpha_bars, t)
+    snr = alpha_t ** 2 / (1. - alpha_t ** 2 + 1e-5)
+    return tf.math.log1p(snr)
+
 class DDPM(keras.Model):
-    def __init__(self, model: keras.Model, beta_1, beta_T, T, cosine_schedule=False,
-                 predict_cov=False, model_v=None, ):
+    def __init__(self, model: keras.Model, beta_1, beta_T, T, model_name,cosine_schedule=False,
+                 predict_cov=False, model_v=None ):
         super(DDPM, self).__init__()
+        self.model_name=model_name
         self.L_t_record = None
         self.optimizer = None
         self.cov_optimizer = None
@@ -57,14 +66,14 @@ class DDPM(keras.Model):
             self.alpha = self.alpha_bar / self.alpha_bar_prev
             self.beta = 1 - self.alpha
             self.beta = tf.clip_by_value(self.beta, 1e-5, 1 - 1e-5)
-            self.beta_tilde = (1 - self.alpha_bar_prev) / (1 - self.alpha_bar) * self.beta
+            self.beta_tilde = tf.clip_by_value(
+                ((1 - self.alpha_bar_prev) / (1 - self.alpha_bar) * self.beta), 1e-5, 1 - 1e-5)
             self.one_div_sqrt_alpha = 1. / tf.math.sqrt(self.alpha)
             self.sqrt_alpha_bar = tf.math.sqrt(self.alpha_bar)
             self.one_minus_alpha_bar = (1 - self.alpha_bar)
             self.sqrt_one_minus_alpha_bar = tf.math.sqrt(1. - self.alpha_bar)
             self.beta_div_sqrt_one_minus_alpha_bar = self.beta / self.sqrt_one_minus_alpha_bar
-
-            self.Lambda = 0.001
+            self.Lambda = 0.5
         else:
             # 线性调度β
             self.beta = tf.linspace(beta_1, beta_T, T)
@@ -72,46 +81,64 @@ class DDPM(keras.Model):
             self.alpha_bar = tf.math.cumprod(self.alpha)
             self.alpha_bar = tf.clip_by_value(self.alpha_bar, 1e-4, 1 - 1e-4)
             self.alpha_bar_prev = tf.concat([[1.], self.alpha_bar[:-1]], axis=0)
-            self.beta_tilde = (1 - self.alpha_bar_prev) / (1 - self.alpha_bar) * self.beta
+            self.beta_tilde = tf.clip_by_value(
+                ((1 - self.alpha_bar_prev) / (1 - self.alpha_bar) * self.beta), 1e-5, 1 - 1e-5)
             self.one_div_sqrt_alpha = 1. / tf.math.sqrt(self.alpha)
             self.sqrt_alpha_bar = tf.math.sqrt(self.alpha_bar)
             self.one_minus_alpha_bar = (1 - self.alpha_bar)
             self.sqrt_one_minus_alpha_bar = tf.math.sqrt(1. - self.alpha_bar)
             self.beta_div_sqrt_one_minus_alpha_bar = self.beta / self.sqrt_one_minus_alpha_bar
 
+    def loss_f(self, t, x_t, mean1, mean_pred, var, var_pred):
+        logvar = tf.math.log(var)
+        logvar_pred = tf.math.log(var_pred)
+
+        tf.debugging.check_numerics(logvar, 'logvar')
+        tf.debugging.check_numerics(logvar_pred, 'logvar_pred')
+
+        # KL divergence between N(mean1, var) and N(mean_pred, var_pred)
+        kl = 0.5 * (
+                -1.0
+                + logvar_pred
+                - logvar
+                + tf.math.exp(logvar - logvar_pred)
+                + tf.square(mean1 - mean_pred) / var_pred
+        )
+        kl = tf.reduce_mean(kl, axis=1) / tf.math.log(2.0)
+
+        # Negative log-likelihood of x_t under predicted Gaussian
+        inv_var = 1.0 / var_pred
+        log_probs = -0.5 * (
+                tf.math.log(2.0 * math.pi) +
+                logvar_pred +
+                tf.square(x_t - mean_pred) * inv_var
+        )
+        log_probs = tf.reduce_mean(log_probs, axis=1) / tf.math.log(2.0)
+
+        tf.debugging.check_numerics(log_probs, "log_probs")
+        tf.debugging.check_numerics(kl, "kl")
+
+        loss = tf.where(t == 0, log_probs, kl)
+        return loss
+
     def compile(self, lr_min, lr_max, warmup_steps, total_steps):
-        # todo: 可能需要的学习率预热
-        lr_schedule = optimizers.schedules.CosineDecay(initial_learning_rate=lr_max,
-                                                       alpha=lr_min,
-                                                       decay_steps=total_steps)
-
-        self.optimizer = keras.optimizers.Adam(learning_rate=lr_schedule)
-        self.loss_fn = losses.MeanSquaredError()
-        super(DDPM, self).compile(
-            optimizer=keras.optimizers.Adam(learning_rate=lr_schedule), loss=self.loss_fn)
-
-        # 协方差
+        lr_schedule1 = tf.keras.optimizers.schedules.CosineDecay(
+            initial_learning_rate=lr_max,
+            alpha=lr_min,
+            decay_steps=total_steps
+        )
+        lr_schedule2 = tf.keras.optimizers.schedules.CosineDecay(
+            initial_learning_rate=lr_max,
+            alpha=lr_min,
+            decay_steps=total_steps
+        )
+        self.optimizer = keras.optimizers.Adam(learning_rate=lr_schedule1)
+        self.loss_fn = keras.losses.MeanSquaredError()
         if self.predict_cov:
-            self.cov_optimizer = keras.optimizers.Adam(lr=lr_schedule)
-
-            # self.L_t_record = np.zeros([self.T, 10], dtype=float)
-
+            self.cov_optimizer = keras.optimizers.Adam(learning_rate=lr_schedule2)
         else:
             self.cov_optimizer = None
-
-    def calculate_L_t(self, t, x_t, x_t_prev, mean_pred, cov_pred):
-        k = x_t_prev.shape[1]
-        n = x_t_prev.shape[0]
-        if t == 0:
-            log_likelihood = -0.5 * k * n * np.log(2 * np.pi) - 0.5 * n * \
-                             np.linalg.slogdet(cov_pred)[1] - 0.5 * np.sum(
-                (x_t_prev - mean_pred) @ np.linalg.inv(cov_pred) * (cov_pred - mean_pred))
-            # (协方差)todo：完善Lt计算以及Lvlb
-            ...
-        elif t == self.T:
-            ...
-        else:
-            ...
+        super(DDPM, self).compile(optimizer=self.optimizer, loss=self.loss_fn)
 
     def call(self, x_0):
         t = tf.random.uniform(shape=(x_0.shape[0],), minval=1, maxval=self.T,
@@ -136,28 +163,54 @@ class DDPM(keras.Model):
             with tf.GradientTape() as tape:
                 x_t, eps, t, eps_pred, v_pred = self.call(x_0)
                 # loss = L_hybrid
-                # (协方差)todo: 将下列重复的代码封装到call()?
-
-                param1 = extract(self.beta, t, x_t.shape)
-                param2 = extract(self.beta_tilde, t, x_t.shape)
+                beta = extract(self.beta, t, x_t.shape)
+                beta_tilde = extract(self.beta_tilde, t, x_t.shape)
+                beta_min = tf.reduce_min(self.beta)
+                beta_max = tf.reduce_max(self.beta)
+                beta_min = tf.cast(beta_min, tf.float32)
+                beta_max = tf.cast(beta_max, tf.float32)
+                coeff1 = extract(self.one_div_sqrt_alpha, t, x_t.shape)
+                coeff2 = extract(self.beta_div_sqrt_one_minus_alpha_bar, t, x_t.shape)
+                coeff3 = tf.math.sqrt(extract(self.alpha_bar_prev, t, x_t.shape))
+                coeff4 = 1 / extract(self.one_minus_alpha_bar, t, x_t.shape)
+                coeff5 = 1. - extract(self.alpha_bar_prev, t, x_t.shape)
+                sqrt_alpha = tf.math.sqrt(extract(self.alpha, t, x_t.shape))
+                mean = coeff3 * beta * coeff4 * x_0 + sqrt_alpha * coeff5 * coeff4 * x_t
+                mean_pred = coeff1 * (x_t - coeff2 * eps_pred)
                 cov_pred = tf.math.exp(
-                    v_pred * tf.math.log(param1) + (1 - v_pred) * tf.math.log(param2))
-                # (协方差)todo：后续补充此梯度下降
-                ...
-            ...
+                    v_pred * tf.math.log(beta_min) + (1 - v_pred) * (
+                            tf.math.log(beta_max)))
+                loss_vlb = self.loss_f(t, x_t, mean, mean_pred, beta_tilde, cov_pred)
+                loss_simple = self.loss_fn(eps_pred, eps)
+                # loss = loss_simple + self.Lambda * loss_vlb
+                loss=loss_vlb
+                weight = get_weight(t, self.alpha_bar)  # shape [batch_size]
+                weight = tf.cast(weight, tf.float32)
+                loss = weight * loss
+            grads = tape.gradient(loss,
+                                  self.model.trainable_variables + self.model_v.trainable_variables)
+            eps_grad = grads[:len(self.model.trainable_variables)]
+            v_grad = grads[len(self.model.trainable_variables):]
+            self.optimizer.apply_gradients(zip(eps_grad, self.model.trainable_variables))
+            self.optimizer.apply_gradients(zip(v_grad, self.model_v.trainable_variables))
+            self.loss_tracker.update_state(loss)
+            return {'loss': loss}
 
-            # return x_t, eps, mean_pred, cov_pred
+        # return x_t, eps, mean_pred, var_pred
 
         # 非余弦调度，3个返回值 + None
         else:
             with tf.GradientTape() as eps_tape:
+
                 x_t, eps, t, eps_pred, v_pred = self.call(x_0)
                 loss_simple = self.loss_fn(eps_pred, eps)
-            eps_grad = eps_tape.gradient(loss_simple, self.model.trainable_variables)
+                weight = get_weight(t, self.alpha_bar)
+                weight = tf.cast(weight, tf.float32)
+                loss = weight * loss_simple
+            eps_grad = eps_tape.gradient(loss, self.model.trainable_variables)
             self.optimizer.apply_gradients(zip(eps_grad, self.model.trainable_variables))
-
-            self.loss_tracker.update_state(loss_simple)
-            return {'loss_simple': loss_simple}
+            self.loss_tracker.update_state(loss)
+            return {'loss': loss}
 
     @property
     def metrics(self):
@@ -189,7 +242,7 @@ class DDPM(keras.Model):
 
         fig.suptitle("Diffusion process")
         fig.tight_layout()
-        plt.savefig("./SampledImgs/Diffusion_process1.png", dpi=300)
+        plt.savefig(f"./SampledImgs/Diffusion_process_{self.model_name}.png", dpi=300)
         plt.close(fig)
         print("Diffusion process plot successfully saved")
 
@@ -201,13 +254,19 @@ class DDPM(keras.Model):
         if t > 1:
             z = tf.random.normal(shape=x_t.shape, dtype=tf.float32)
             v_pred = self.model_v(x_t, t)
-            param1 = extract(self.beta, t, x_t.shape)
-            param2 = extract(self.beta_tilde, t, x_t.shape)
+            # param1 = extract(self.beta, t, x_t.shape)
+            # param2 = extract(self.beta_tilde, t, x_t.shape)
+            beta_min=tf.reduce_min(self.beta)
+            beta_max=tf.reduce_max(self.beta)
+            beta_min=tf.cast(beta_min, tf.float32)
+            beta_max=tf.cast(beta_max, tf.float32)
+            # cov_t_pred = tf.math.exp(
+            #     v_pred * tf.math.log(param1) + (1 - v_pred) * tf.math.log(param2))
             cov_t_pred = tf.math.exp(
-                v_pred * tf.math.log(param1) + (1 - v_pred) * tf.math.log(param2))
-            L = tf.linalg.cholesky(cov_t_pred)
+                v_pred * tf.math.log(beta_min) + (1 - v_pred) * tf.math.log(beta_max))
+
             eps_pred = self.model(x_t, t)
-            x_t_prev = coeff1 * (x_t - coeff2 * eps_pred) + tf.matmul(L, z)
+            x_t_prev = coeff1 * (x_t - coeff2 * eps_pred) + tf.math.sqrt(cov_t_pred) * z
         else:
             eps_pred = self.model(x_t, t)
             x_t_prev = coeff1 * (x_t - coeff2 * eps_pred)
@@ -227,8 +286,9 @@ class DDPM(keras.Model):
         #     print(t.numpy())
         x_t_prev = tf.cond(
             t > 1,
-            lambda: coeff1 * (x_t - coeff2 * eps_pred) + coeff3 * tf.random.normal(shape=x_t.shape,
-                                                                                   dtype=tf.float32),
+            lambda: coeff1 * (x_t - coeff2 * eps_pred) + tf.math.sqrt(coeff3) * tf.random.normal(
+                shape=x_t.shape,
+                dtype=tf.float32),
             lambda: coeff1 * (x_t - coeff2 * eps_pred)
         )
         # print("step:",t.numpy())
@@ -273,7 +333,7 @@ class DDPM(keras.Model):
                 if i == len(sampled_t):
                     fig.suptitle("Denoise process")
                     fig.tight_layout()
-                    plt.savefig("./SampledImgs/Denoise_process1.png", dpi=300)
+                    plt.savefig(f"./SampledImgs/Denoise_process_{self.model_name}.png", dpi=300)
                     plt.close(fig)
                     print("Denoise process plot successfully saved")
         return x_t
@@ -282,7 +342,7 @@ class DDPM(keras.Model):
     def generate_samples(self, sample_num):
         batch_size = 100
         latent_dim = ZERNIKE_NUMS
-        num_steps = sample_num // batch_size + 1
+        num_steps = sample_num // batch_size
         sample_num = num_steps * batch_size
 
         # 创建一个 TensorArray 来存储生成的样本
@@ -296,5 +356,3 @@ class DDPM(keras.Model):
         samples = samples.stack()
         samples = tf.reshape(samples, (sample_num, -1))
         return samples
-
-

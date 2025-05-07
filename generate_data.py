@@ -4,15 +4,18 @@
 gen_data: 多线程并行产生模拟湍流数据
 
 """
-from concurrent.futures import ThreadPoolExecutor
 import glob
 import multiprocessing as mp
 import os
+from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
+import pandas
 import pandas as pd
 from PIL import Image
+from matplotlib import pyplot as plt
 from scipy import signal
+from tensorflow import keras
 from tqdm import tqdm
 
 from aberration import ZERNIKE_NUMS, PhaseScreen
@@ -75,9 +78,7 @@ def gen_beam(mode):
     else:
         return resize_beam(LG_mode(mode))
 
-
 beam_list = [gen_beam(mode) for mode in mode_list]
-
 
 def gen_data(args: tuple[int, int, list, int, int]):
     """
@@ -91,7 +92,7 @@ def gen_data(args: tuple[int, int, list, int, int]):
         每次负责生成多少组
     dr0_range: list[low,high]
         湍流强度参数
-    idx: int
+    name: int
         当前数据集的序号
     position: int
         用于显示,是进度条的显示位置
@@ -140,7 +141,7 @@ def gen_data(args: tuple[int, int, list, int, int]):
     # plt.imshow(series[0])  # type: ignore
     # plt.colorbar()
     # plt.show()
-    series.to_pickle(os.path.join(DATADIR, "data", "{}_DDPM.pkl".format(idx)))
+    series.to_pickle(os.path.join(DATADIR, "batch_data", "{}_DDPM.pkl".format(idx)))
 
 
 # data_series = pd.read_pickle(pkl_path)
@@ -150,28 +151,32 @@ def process_coeff_beam(coeff, beam, ps):
     psf = ps.get_psf()
     img = signal.fftconvolve(psf, beam)
     img = np.abs(img)
+    img = resize_beam(img)
     return img
 
-def gen_img_label(coeff_pickle, name):
-    data_matrix = np.stack(coeff_pickle, axis=0).astype(np.float32)
-    # todo: 将ps处理过程批次化，加快处理速度
+
+def gen_img_label(coeff_pickle_or_npy, name):
+    if coeff_pickle_or_npy[-4:] == ".pkl":
+        data_series = pd.read_pickle(coeff_pickle_or_npy)
+        data_matrix = np.stack(data_series, axis=0).astype(np.float32)
+    elif coeff_pickle_or_npy[-4:] == ".npy":
+        data_matrix = np.load(coeff_pickle_or_npy)
     labels = []
     imgs = []
-    futures=[]
+    futures = []
     ps = PhaseScreen(256, ZERNIKE_NUMS, cache_dir="./cache/")
     with ThreadPoolExecutor() as executor:
-    # psf_array = np.array([ps.get_psf(ps.set_zernike_coeffients(coeff)) for coeff in data_matrix])  # 预计算 PSF
-        with tqdm(total=len(beam_list) * len(data_matrix),
-                  desc=f'generating VGG data of {name}...') as pbar:
+        # psf_array = np.array([ps.get_psf(ps.set_zernike_coeffients(coeff)) for coeff in data_matrix])  # 预计算 PSF
+        with tqdm(total=len(beam_list) * len(data_matrix[:500]),
+                  desc=f'generating VGG batch_data of {name}...') as pbar:
             for i, beam in enumerate(beam_list):
                 # 光束循环
-
-                for j, coeff in enumerate(data_matrix):
+                for j, coeff in enumerate(data_matrix[:500]):
                     # 系数循环
                     future = executor.submit(process_coeff_beam, coeff, beam, ps)
                     future.add_done_callback(lambda p: pbar.update(1))
-                    futures.append((future,i))
-            for future,i in futures:
+                    futures.append((future, i))
+            for future, i in futures:
                 imgs.append(future.result())
                 labels.append(i)
 
@@ -182,8 +187,7 @@ def gen_img_label(coeff_pickle, name):
             pbar.close()
 
 
-
-def generate_data(length_per_Dr0, Dr0_range, parallel_processors=2, nums_Dr0=2):
+def generate_data(length_per_Dr0, Dr0_range, parallel_processors=2, nums_Dr0=2,name=''):
     ##设置生成样本的参数
     assert (
             nums_Dr0 % parallel_processors == 0
@@ -192,8 +196,8 @@ def generate_data(length_per_Dr0, Dr0_range, parallel_processors=2, nums_Dr0=2):
 
     if not os.path.exists(DATADIR):
         os.mkdir(DATADIR)
-    if not os.path.exists(os.path.join(DATADIR, "data")):
-        os.mkdir(os.path.join(DATADIR, "data"))
+    if not os.path.exists(os.path.join(DATADIR, "batch_data")):
+        os.mkdir(os.path.join(DATADIR, "batch_data"))
     mp.freeze_support()
 
     repeat_times = int(nums_Dr0 / parallel_processors)
@@ -219,7 +223,7 @@ def generate_data(length_per_Dr0, Dr0_range, parallel_processors=2, nums_Dr0=2):
     # 指定文件模式，找到所有以 '_gan.npy' 结尾的文件
     file_pattern = "*_DDPM.pkl"
     # 使用 glob.glob 查找匹配的文件
-    file_list = glob.glob(os.path.join(DATADIR, "data", file_pattern))
+    file_list = glob.glob(os.path.join(DATADIR, "batch_data", file_pattern))
 
     # 读取并合并文件
     # 所有文件都是相同形状的 NumPy 数组构成的Series
@@ -237,12 +241,9 @@ def generate_data(length_per_Dr0, Dr0_range, parallel_processors=2, nums_Dr0=2):
     assert list(merged_series[0].shape) == [
         ZERNIKE_NUMS,
     ]
-    merged_series.to_pickle("./Datasets/merged_data.pkl")
-    print(f'All "_DDPM.npy" files have been merged into "./Datasets/merged_data.pkl"')
+    merged_series.to_pickle(f"./Datasets/merged_data{name}.pkl")
+    print(f'All "_DDPM.npy" files have been merged into "./Datasets/merged_data{name}.pkl"')
 
 
 if __name__ == "__main__":
-    generate_data(length_per_Dr0=2500, nums_Dr0=2, Dr0_range=10)
-    # pkl = pd.read_pickle("./Datasets/merged_data.pkl")
-    # gen_img_label(pkl,'real')
-    # gen_data((25, 1, [5, 6], 1, 1))
+    ...
