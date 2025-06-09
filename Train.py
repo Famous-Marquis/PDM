@@ -11,8 +11,7 @@ from Diffusion import DDPM
 from Model import FCMean, FCCov
 from aberration import ZERNIKE_NUMS
 from config import MODEL_CONFIG
-from generate_data import generate_data
-from metrics import frechet_distance, compare_pca_spectrum
+from metrics import frechet_distance, compare_pca_spectrum, FD_calculator
 from plot_struct import plot_struct, plot_struct_curve
 
 class DDPMMonitor(keras.callbacks.Callback):
@@ -22,6 +21,7 @@ class DDPMMonitor(keras.callbacks.Callback):
         self.fds = []
         self.pcas=[]
         self.model_checkpoint_path = model_checkpoint_path
+        self.FD_calculator=FD_calculator(real_data)
 
     def on_train_begin(self, logs=None):
         # 绘制正向扩散过程
@@ -36,12 +36,12 @@ class DDPMMonitor(keras.callbacks.Callback):
         x_T = tf.random.normal((max_len, self.real_data.shape[1]))
         generated_data = self.model.denoise(x_T)
         generated_data = generated_data.numpy()
-        fd = frechet_distance(self.real_data[:max_len], generated_data)
+        fd = self.FD_calculator.frechet_distance(generated_data)
         self.fds.append(fd)
-        pca=compare_pca_spectrum(self.real_data[:max_len], generated_data)
-        self.pcas.append(pca)
+        # pca=compare_pca_spectrum(self.real_data[:max_len], generated_data)
+        # self.pcas.append(pca)
         logs["val_loss"] = fd
-        print("epoch:", epoch, " Frechet distance:", fd, " PCA norm:", pca)
+        print("epoch:", epoch, " Frechet distance:",fd)
 
     def on_train_end(self, logs=None):
         fig1 = plt.figure()
@@ -72,7 +72,7 @@ class DDPMMonitor(keras.callbacks.Callback):
         plt.savefig(f"./SampledImgs/{self.model.model_name}_struct.png", dpi=300)
         plt.close(fig2)
         # 随机绘制多个原始样本与生成样本
-        fig, axes = plt.subplots(6, 6, figsize=(10, 5))
+        fig, axes = plt.subplots(3, 3, figsize=(10, 5))
         for i, ax in enumerate(axes.flat):
             bar = ax.imshow(x_0_eval[i][None, :], aspect='auto', cmap='viridis')
             fig.colorbar(bar, ax=ax, orientation='vertical')
@@ -84,10 +84,10 @@ class DDPMMonitor(keras.callbacks.Callback):
 
 
 class DDPMTrainer:
-    def __init__(self, model_config):
+    def __init__(self, model_config,data_path):
         self.model_name = model_config["model_name"]
         self.model_config = model_config
-        self.data_path = model_config["data_path"]
+        self.data_path = data_path
         self.model_checkpoint_path = model_config["model_checkpoint_path"]
         # self.model_v_checkpoint_path = model_config["model_v_checkpoint_path"]
         self.ddpm = self._build_ddpm()
@@ -138,12 +138,7 @@ class DDPMTrainer:
             plt.close(fig)
 
     def load_data(self, batch_size):
-        if self.model_config["generate_new_data"]:
-            generate_data(length_per_Dr0=self.model_config["length_per_Dr0"],
-                          nums_Dr0=self.model_config["nums_Dr0"],
-                          Dr0_range=self.model_config["Dr0_range"], )
-        data_series = pandas.read_pickle(self.data_path)
-        data_matrix = np.stack(data_series).astype(np.float32)
+        data_matrix = np.load(self.data_path).astype(np.float32)
         dataset = tf.data.Dataset.from_tensor_slices(data_matrix)
         dataset = dataset.shuffle(buffer_size=batch_size * 10)
         dataset = dataset.batch(batch_size, drop_remainder=True).prefetch(
@@ -178,7 +173,8 @@ class DDPMTrainer:
                             model_checkpoint_path=self.model_checkpoint_path),
                 keras.callbacks.ModelCheckpoint(self.model_checkpoint_path, save_weights_only=True,
                                                 save_best_only=True),
-            ]
+            ],
+            shuffle=True
         )
 
         self._plot_loss(history)

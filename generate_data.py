@@ -18,7 +18,7 @@ from scipy import signal
 from tensorflow import keras
 from tqdm import tqdm
 
-from aberration import ZERNIKE_NUMS, PhaseScreen
+from aberration import ZERNIKE_NUMS, PhaseScreen, BatchPhaseScreen
 from beam import LG_mode
 
 DATADIR = "./Datasets/"
@@ -64,7 +64,7 @@ def resize_beam(beam):
     return resized_beam
 
 
-def gen_beam(mode):
+def OAM_beam(mode):
     if type(mode) == tuple:
         if len(mode) == 2:
             l1, l2 = mode
@@ -78,9 +78,9 @@ def gen_beam(mode):
     else:
         return resize_beam(LG_mode(mode))
 
-beam_list = [gen_beam(mode) for mode in mode_list]
+beam_list = [OAM_beam(mode) for mode in mode_list]
 
-def gen_data(args: tuple[int, int, list, int, int]):
+def gen_data(l0,L0,r0,R,alpha,ps,nums,name):
     """
     并行生成不同湍流强度(Dr0)的函数,参数按照元组形式传递
 
@@ -92,56 +92,40 @@ def gen_data(args: tuple[int, int, list, int, int]):
         每次负责生成多少组
     dr0_range: list[low,high]
         湍流强度参数
-    name: int
-        当前数据集的序号
-    position: int
-        用于显示,是进度条的显示位置
+
     """
-    length: int = args[0]
-    repeat_times = args[1]
-    Dr0_range = args[2]
-    if isinstance(Dr0_range, list):
-        Dr0_list = np.random.uniform(Dr0_range[0], Dr0_range[1], (repeat_times,))
-    else:
-        Dr0_list = [Dr0_range for i in range(repeat_times)]
-    idx = args[3]
-    position = args[4]
-    ps = PhaseScreen(256, ZERNIKE_NUMS, cache_dir="./cache/")
+
     with tqdm(
-            total=length * repeat_times,
-            desc="当前生成第{}~{}组数据".format(
-                idx * repeat_times, (idx + 1) * repeat_times
-            ),
-            position=position,
+            total=nums,
+            desc="当前生成数据",
             dynamic_ncols=True,
     ) as pbar:
         list_of_samples = []
-        for Dr0 in Dr0_list:
-            for j in range(length):
-                ps.simulate_turbulence(Dr0, method="zernike")
-                z_coes = np.array(ps.get_coeffients())
-                assert list(z_coes.shape) == [
-                    ZERNIKE_NUMS,
-                ], "z-coes形状不对！"
+        for _ in range(nums):
+            ps.simulate_turbulence(l0,L0,r0,R,alpha, method="zernike")
+            z_coes = np.array(ps.get_coeffients())
+            assert list(z_coes.shape) == [
+                ZERNIKE_NUMS,
+            ], "z-coes形状不对！"
 
-                # image = ps.get_screen()
-                # plt.imshow(image)
-                # plt.colorbar()
-                # plt.show()
-                # assert list(image.shape) == [256, 256], "生成的相位屏长宽不对!"
-                # assert type(image) == np.ndarray
-                # assert image.dtype == np.float64
-                # list_of_samples.append(image)
-                list_of_samples.append(z_coes)
-                pbar.update(1)
-        assert len(list_of_samples) == length * repeat_times
+            # image = ps.get_screen()
+            # plt.imshow(image)
+            # plt.colorbar()
+            # plt.show()
+            # assert list(image.shape) == [256, 256], "生成的相位屏长宽不对!"
+            # assert type(image) == np.ndarray
+            # assert image.dtype == np.float64
+            # list_of_samples.append(image)
+            list_of_samples.append(z_coes)
+            pbar.update(1)
+        assert len(list_of_samples) == nums
         # 存储数据集
         pbar.close()
-    series = pd.Series(list_of_samples)
+    arr = np.array(list_of_samples)
     # plt.imshow(series[0])  # type: ignore
     # plt.colorbar()
     # plt.show()
-    series.to_pickle(os.path.join(DATADIR, "batch_data", "{}_DDPM.pkl".format(idx)))
+    np.save(name,arr)
 
 
 # data_series = pd.read_pickle(pkl_path)
@@ -155,7 +139,7 @@ def process_coeff_beam(coeff, beam, ps):
     return img
 
 
-def gen_img_label(coeff_pickle_or_npy, name):
+def gen_img_label(coeff_pickle_or_npy, name,ps):
     if coeff_pickle_or_npy[-4:] == ".pkl":
         data_series = pd.read_pickle(coeff_pickle_or_npy)
         data_matrix = np.stack(data_series, axis=0).astype(np.float32)
@@ -164,9 +148,10 @@ def gen_img_label(coeff_pickle_or_npy, name):
     labels = []
     imgs = []
     futures = []
-    ps = PhaseScreen(256, ZERNIKE_NUMS, cache_dir="./cache/")
+    # bps = BatchPhaseScreen(1,256, ZERNIKE_NUMS, cache_dir="./cache/")
     with ThreadPoolExecutor() as executor:
-        # psf_array = np.array([ps.get_psf(ps.set_zernike_coeffients(coeff)) for coeff in data_matrix])  # 预计算 PSF
+
+        # psf_array = np.array([bps.get_psf(bps.set_zernike_coeffients(coeff)) for coeff in data_matrix])  # 预计算 PSF
         with tqdm(total=len(beam_list) * len(data_matrix[:500]),
                   desc=f'generating VGG batch_data of {name}...') as pbar:
             for i, beam in enumerate(beam_list):
@@ -187,63 +172,7 @@ def gen_img_label(coeff_pickle_or_npy, name):
             pbar.close()
 
 
-def generate_data(length_per_Dr0, Dr0_range, parallel_processors=2, nums_Dr0=2,name=''):
-    ##设置生成样本的参数
-    assert (
-            nums_Dr0 % parallel_processors == 0
-    ), "样本集数量必须为PARALLEL_PROCESSORS的整数倍!"
-    # 必须为 PARALLEL_PROCESSORS 的倍数
-
-    if not os.path.exists(DATADIR):
-        os.mkdir(DATADIR)
-    if not os.path.exists(os.path.join(DATADIR, "batch_data")):
-        os.mkdir(os.path.join(DATADIR, "batch_data"))
-    mp.freeze_support()
-
-    repeat_times = int(nums_Dr0 / parallel_processors)
-
-    args_tuple = list(
-        (
-            (length_per_Dr0, repeat_times, Dr0_range, idx, idx)
-            for idx in range(parallel_processors)
-        )
-    )
-    with mp.Pool(parallel_processors) as pool:
-        pool.map(gen_data, args_tuple)
-    os.system("cls")
-    # gen_data((100, 3, [5, 15], 2, 2))
-    # 此处创建N个进程,同时执行生成数据函数. 在此阻塞，直到所有进程任务结束,执行下一行代码
-
-    print("all have finished!!")
-
-    """
-    将所有生成的模拟湍流数据,进行整合,供gan模型使用
-    """
-
-    # 指定文件模式，找到所有以 '_gan.npy' 结尾的文件
-    file_pattern = "*_DDPM.pkl"
-    # 使用 glob.glob 查找匹配的文件
-    file_list = glob.glob(os.path.join(DATADIR, "batch_data", file_pattern))
-
-    # 读取并合并文件
-    # 所有文件都是相同形状的 NumPy 数组构成的Series
-    merged_series = pd.Series(dtype=object)
-    for file_name in file_list:
-        series = pd.read_pickle(file_name)
-        assert type(series) == pd.Series, "文件格式读取出来不是Series"
-        merged_series = pd.concat([merged_series, series], ignore_index=True)
-
-    assert len(merged_series) == len(series) * len(
-        file_list
-    ), "合成出来的数据元素数目不对"
-    assert type(merged_series[0]) == np.ndarray, "Series中元素不是numpy数组"
-    # assert list(merged_series[0].shape) == [256, 256], "Series中的元素大小不是256*256"
-    assert list(merged_series[0].shape) == [
-        ZERNIKE_NUMS,
-    ]
-    merged_series.to_pickle(f"./Datasets/merged_data{name}.pkl")
-    print(f'All "_DDPM.npy" files have been merged into "./Datasets/merged_data{name}.pkl"')
-
 
 if __name__ == "__main__":
+
     ...

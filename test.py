@@ -21,7 +21,8 @@ if __name__ == '__main__':
     c = tf.constant([  [[1.0,2.0,3.0],[4.0,5.0,6.0]]
                       ,[[2.0,3.0,4.0],[5.0,6.0,7.0]]  ])
     result = tf.add(a, b)
-
     print(result)
     print(c)
+    print('\"\"')
+
 

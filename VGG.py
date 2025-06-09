@@ -6,7 +6,8 @@ from keras.callbacks import ModelCheckpoint
 from matplotlib import pyplot as plt
 from tensorflow.keras.layers import Conv2D, BatchNormalization, Activation, MaxPool2D, Dropout, \
     Flatten, Dense
-
+from tensorflow.keras import backend as K
+import gc
 
 from generate_data import beam_list
 
@@ -193,7 +194,7 @@ class VGG16Trainer:
         self.history_dict = history.history
 
     # VGG比较简单，可以直接用keras封装好的函数库
-def train_VGG(data_name,test_data_name,name=''):
+def train_VGG(data_name,test_data_name,name='',kind=''):
     data_matrix = np.load(f'./Datasets/VGG_Datasets_{data_name}.npz')
     model = VGG16()
     model.build((64, 224, 224))
@@ -208,7 +209,7 @@ def train_VGG(data_name,test_data_name,name=''):
     data_test_matrix = np.load(f'./Datasets/VGG_Datasets_{test_data_name}.npz')
     imgs_test, labels_test = data_test_matrix["imgs"], data_test_matrix["labels"]
     imgs_train, labels_train = data_matrix["imgs"], data_matrix["labels"]
-    history = model.fit(imgs_train, labels_train, batch_size=64, epochs=50,
+    history = model.fit(imgs_train, labels_train, batch_size=64, epochs=100,
                         validation_data=(imgs_test, labels_test), shuffle=True,
                         callbacks=ckpt_callback)
     history_dict = history.history
@@ -216,12 +217,15 @@ def train_VGG(data_name,test_data_name,name=''):
     axes[0].plot(history_dict['loss'], label='train_loss')
     axes[0].plot(history_dict['val_loss'], label='test_loss')
     axes[0].legend()
-    axes[0].title.set_text('loss')
+    axes[0].title.set_text(f'{kind} loss')
 
     axes[1].plot(history_dict['sparse_categorical_accuracy'], label='train_acc')
     axes[1].plot(history_dict['val_sparse_categorical_accuracy'], label='test_acc')
+    axes[1].set_yticks([0.,0.2,0.4,0.6,0.8,1.0])
     axes[1].legend()
-    axes[1].title.set_text('acc')
+    axes[1].title.set_text(f'{kind} acc')
     plt.savefig(f'./Record/VGG16_history{name}.png', dpi=300)
+    K.clear_session()
+    gc.collect()
 if __name__ == "__main__":
     ...

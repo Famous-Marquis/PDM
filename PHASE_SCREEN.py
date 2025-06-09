@@ -73,3 +73,4 @@ def timing_per_screen(repeat_num,N,dx,psd,sub_harm):
     end_time = time.time()
     average_time = (end_time-start_time)/repeat_num
     print(f'N:{N},SH:{sub_harm}\naverage time:', average_time)
+    return average_time

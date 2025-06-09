@@ -201,12 +201,12 @@ class DDPM(keras.Model):
         # 非余弦调度，3个返回值 + None
         else:
             with tf.GradientTape() as eps_tape:
-
                 x_t, eps, t, eps_pred, v_pred = self.call(x_0)
                 loss_simple = self.loss_fn(eps_pred, eps)
                 weight = get_weight(t, self.alpha_bar)
                 weight = tf.cast(weight, tf.float32)
                 loss = weight * loss_simple
+                tf.debugging.check_numerics(loss,'loss Error')
             eps_grad = eps_tape.gradient(loss, self.model.trainable_variables)
             self.optimizer.apply_gradients(zip(eps_grad, self.model.trainable_variables))
             self.loss_tracker.update_state(loss)

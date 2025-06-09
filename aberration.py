@@ -2,8 +2,16 @@
 默认支持400维zernike系数
 ZM和ZN是zernike系数的索引，其中ZM的索引有两种表示方式，根据需要取用
 """
+import math
+
+from tqdm import tqdm
+
+from PSD import cov_j_j_prime, modified_Von_Karman
+
 CACHE_DIR = "./cache"
-ZERNIKE_NUMS = 66
+
+N_DEGREE = 20
+ZERNIKE_NUMS = int((N_DEGREE+1)*(N_DEGREE+2)/2)
 SCREEN_SIZE = 224
 ZN = [
     0,
@@ -1214,7 +1222,7 @@ ZM = [
     21,
 ]
 import os
-from math import factorial
+from math import factorial, gamma
 from typing import Literal
 
 import matplotlib.pyplot as plt
@@ -1230,7 +1238,7 @@ def GenerateZnAndZm(z_num=ZERNIKE_NUMS):
     def append_nm(n, m, k):
         N.append(n)
         M.append(m)
-        # print('index {}, n:{}, m:{}'.format(k, n, m))
+        # print('index {}, n:{}, size:{}'.format(k, n, size))
         return k + 1
 
     for m in range(n + 1):
@@ -1303,12 +1311,12 @@ def ZernikePoly(i, r=None, theta=None):
     if np.all(r == None) or np.all(theta == None):
         x, y = meshgrid(np.linspace(-1, 1, SCREEN_SIZE))
         theta, r = cart2pol(x, y)
-    n, m = ZN[i], ZM[i]
+    n, m = ZN[i], ZM_[i]
     pupil = r < 1  # type: ignore
 
     def _zrf(n, m, r):
         R = 0
-        for s in range((n - m) // 2 + 1):
+        for s in range((n - abs(m)) // 2 + 1):
             num = (-1) ** s * factorial(n - s)
             denom = (
                     factorial(s) * factorial((n + m) // 2 - s) * factorial((n - m) // 2 - s)
@@ -1333,7 +1341,7 @@ def noll_zernike_coeffients(z_num=ZERNIKE_NUMS, Dr0=7):
     from numpy import linalg as la
 
     n = ZN[:z_num]
-    m = ZM[:z_num]
+    m = ZM_[:z_num]
 
     C = np.zeros([z_num, z_num])
     for i in range(1, z_num):
@@ -1351,8 +1359,9 @@ def noll_zernike_coeffients(z_num=ZERNIKE_NUMS, Dr0=7):
                 C[i, j] = Dr0 ** (5 / 3) * k * a / (b * c * d)
 
     # SVD-based sampling
-    u, s, v = la.svd(C[1:, 1:])
+    u, s, v = la.svd(C[2:, 2:])
     rand = np.random.normal(size=z_num - 1)
+    print(u.shape, s.shape, rand.shape)
     A = np.dot(u, np.sqrt(s) * rand)
 
     # Insert piston = 1.0
@@ -1374,6 +1383,7 @@ class PhaseScreen:
     """
 
     def __init__(self, N=SCREEN_SIZE, znum=ZERNIKE_NUMS, cache_dir=CACHE_DIR):
+        self.zernike_coeff_generator = ZernikeCoefficientGenerator()
         self.N = N
         self.znum = znum
         self.x, self.y = meshgrid(np.linspace(-1, 1, N))
@@ -1469,7 +1479,7 @@ class PhaseScreen:
         self._scr = scr
         return self
 
-    def simulate_turbulence(self, Dr0, method: Literal["ft", "zernike"] = "zernike"):
+    def simulate_turbulence(self, l0,L0,r0,R,alpha, method: Literal["ft", "zernike"] = "zernike", ):
         """
         进行大气湍流仿真,生成相位屏.
 
@@ -1482,15 +1492,12 @@ class PhaseScreen:
 
         """
         if method == "ft":
-            scr = FtPhaseScreen(Dr0, self.N, L0=float("inf"), l0=0)
-            self.fit(scr)
-            self.update_screen()
+            raise NotImplementedError
         elif method == "zernike":
-            z = noll_zernike_coeffients(z_num=self.znum, Dr0=Dr0)
-            self.set_zernike_coeffients(z, update_scr=False)
+            z_coes_stack = self.zernike_coeff_generator.generate(self.znum,l0,L0,r0,R,alpha)
+            self.set_zernike_coeffients(z_coes_stack)
         else:
             raise NotImplementedError
-
         return self
 
     def remove_tip_tilt(self):
@@ -1627,118 +1634,154 @@ class PhaseScreen:
         self._scr *= pupil
         return self
 
+
 class ZernikeCoefficientGenerator:
     def __init__(self):
-        self.Dr0_cached = None
+        self.Jn = None
+        self.Jm = None
+        self.params_cached = None
         self.C_cached = None
         self.u_cached = None
         self.s_cached = None
 
-    def prepare(self, z_num, Dr0):
+    def prepare(self, z_num, l0, L0, r0, R,alpha):
         """准备协方差矩阵C和SVD"""
-        if (self.Dr0_cached == Dr0) and (self.C_cached is not None):
+        if (self.params_cached == [l0, L0, r0, R]) and (self.C_cached is not None):
             # 如果Dr0没变，直接跳过
             return
-
-        import scipy.special as S
+        print('initialize the coviriance matrix...')
         from numpy import linalg as la
-
-        n = ZN[:z_num]
-        m = ZM[:z_num]
-
+        self.Jn, self.Jm = cal_n_m(n_degree=N_DEGREE)
+        n = self.Jn
+        m = abs(self.Jm)
+        # print(len(n), len(m))
         # 计算新的C
-        C = np.zeros([z_num, z_num])
-        for i in range(1, z_num):
-            for j in range(1, z_num):
-                if m[i] == m[j] and (not (i % 2 == j % 2) or m[i] == 0):
-                    k = (
-                            2.2698
-                            * (-1) ** ((n[i] + n[j] - 2 * m[i]) / 2)
-                            * np.sqrt((n[i] + 1) * (n[j] + 1))
-                    )
-                    a = S.gamma((n[i] + n[j] - 5 / 3) / 2)
-                    b = S.gamma((n[i] - n[j] + 17 / 3) / 2)
-                    c = S.gamma((n[j] - n[i] + 17 / 3) / 2)
-                    d = S.gamma((n[i] + n[j] + 23 / 3) / 2)
-                    C[i, j] = Dr0 ** (5 / 3) * k * a / (b * c * d)
+        C = np.zeros([z_num + 1, z_num + 1])
 
+        # print(z_num, C.shape)
+        with tqdm(total=z_num*z_num,position=0, leave=True) as pbar:
+            for i in range(1, z_num + 1):
+                for j in range(1, z_num + 1):
+                    pbar.update(1)
+                    if m[i] == m[j] and (abs(j - i) % 2 == 0 or m[i] == 0):
+                        # k = (
+                        #         2.2698
+                        #         * (-1) ** ((n[i] + n[j] - 2 * m[i]) / 2)
+                        #         * np.sqrt((n[i] + 1) * (n[j] + 1))
+                        # )
+                        # a = S.gamma((n[i] + n[j] - 5 / 3) / 2)
+                        # b = S.gamma((n[i] - n[j] + 17 / 3) / 2)
+                        # c = S.gamma((n[j] - n[i] + 17 / 3) / 2)
+                        # d = S.gamma((n[i] + n[j] + 23 / 3) / 2)
+                        # C[i, j] = Dr0 ** (5 / 3) * k * a / (b * c * d)
+                        C[i, j] = cov_j_j_prime(n[i], n[j], m[i], m[j], modified_Von_Karman(l0, L0, r0,alpha),
+                                                R)
+        C[1, 1] = 0
+
+        diag = np.diag(C)
+
+        # 计算 sqrt(C[i,i])，形状是 (n,)
+        sqrt_diag = np.sqrt(diag)
+
+        # 外积形成 sqrt(C[i,i] * C[j,j]) 矩阵，形状是 (n, n)
+        denom = np.outer(sqrt_diag, sqrt_diag)
+        denom[denom == 0] = 1
+        # 归一化协方差矩阵
+        C_normalized = C / denom
+        # print(f"C11,{C[1, 1]}")
+        # print(f"C22,{C[2, 2]}")
+
+        plt.imshow(C_normalized[2:35, 2:35])
+        # plt.yscale("log")
+        plt.colorbar()
+        plt.show()
         # SVD分解
-        u, s, v = la.svd(C[1:, 1:])
+        plt.plot(C[1:, 1:].diagonal())
+        plt.yscale("log")
+        plt.xscale("log")
+        plt.show()
+        u, s, v = la.svd(C[2:, 2:])
 
         # 保存
-        self.Dr0_cached = Dr0
+        self.params_cached = [l0, L0, r0, R]
         self.C_cached = C
         self.u_cached = u
         self.s_cached = s
 
-    def generate(self, batch_size, z_num, Dr0):
+    def generate(self, z_num, l0, L0, r0, R,alpha):
         """生成批量Zernike系数"""
-        self.prepare(z_num, Dr0)  # 先确保准备好了
+        self.prepare(z_num, l0, L0, r0, R,alpha)  # 先确保准备好了
 
         # 批量生成
-        rand = np.random.normal(size=(batch_size, z_num - 1))  # [batch, znum-1]
-        A = np.dot(rand * np.sqrt(self.s_cached), self.u_cached.T)  # [batch, znum-1]
+        rand = np.random.normal(size=(z_num - 1,))  # [ znum-1,]
+        A = np.dot(rand * np.sqrt(self.s_cached), self.u_cached.T)  # [znum-1,]
 
-        zernike_batch = np.zeros((batch_size, z_num))
-        zernike_batch[:, 0] = 1.0
-        zernike_batch[:, 1:] = A
+        zernike_coeff = np.zeros((z_num,))
+        zernike_coeff[0] = 0.
+        zernike_coeff[1:] = A
 
-        return zernike_batch
+        return zernike_coeff
 
 
 class BatchPhaseScreen(PhaseScreen):
-    def __init__(self,batch, N=SCREEN_SIZE, znum=ZERNIKE_NUMS, cache_dir=CACHE_DIR):
+    def __init__(self, batch, N=SCREEN_SIZE, znum=ZERNIKE_NUMS, cache_dir=CACHE_DIR):
         # todo：灵活batch，针对剩余的几个也能正常处理
         super().__init__(N, znum, cache_dir)
-        self.batch=batch
+        self.batch = batch
         self.zernike_coeff_generator = ZernikeCoefficientGenerator()
-        self.z_coes_stack = np.zeros([self.batch,self.znum])
-        self.scr_stack = np.zeros([self.batch,self.N,self.N])
+        self.z_coes_stack = np.zeros([self.batch, self.znum])
+        self.scr_stack = np.zeros([self.batch, self.N, self.N])
         try:
             if not os.path.exists(cache_dir):
                 os.makedirs(cache_dir)
-            cache_path=os.path.join(cache_dir,"zpoly_"+str(self.znum)+"_"+str(self.N)+".npy")
+            cache_path = os.path.join(cache_dir,
+                                      "zpoly_" + str(self.znum) + "_" + str(self.N) + ".npy")
             self._zpolys = np.load(cache_path)
-            assert len(self._zpolys.shape)==3
-            assert self.N == self._zpolys.shape[1]==self._zpolys.shape[2]
+            assert len(self._zpolys.shape) == 3
+            assert self.N == self._zpolys.shape[1] == self._zpolys.shape[2]
         except FileNotFoundError:
             print("load cache file fails, init zpolys all over:\n znum={},N={}".format(znum, N))
             self._zpolys = []
             for i in range(znum):
-                self._zpolys.append(ZernikePoly(i,self.r,self.theta))
+                self._zpolys.append(ZernikePoly(i, self.r, self.theta))
             self._zpolys = np.array(self._zpolys)
             try:
                 assert len(self._zpolys.shape) == 3
                 assert self.N == self._zpolys.shape[1] == self._zpolys.shape[2]
-                np.save(cache_path,self._zpolys)
+                np.save(cache_path, self._zpolys)
             except Exception as e:
-                print("save cache file fails:",e)
+                print("save cache file fails:", e)
+
     def get_psf(self):
-        raise NotImplementedError()
+        return Psf(self.get_screen()[0])
+
+        # raise NotImplementedError()
 
     def get_screen(self):
         return self.scr_stack
-    def set_screen(self,screen_stack):
-        if screen_stack.shape==(self.batch,self.N,self.N):
-                self.scr_stack = screen_stack
+
+    def set_screen(self, screen_stack):
+        if screen_stack.shape == (self.batch, self.N, self.N):
+            self.scr_stack = screen_stack
         else:
             raise ValueError
         return self
 
     def set_zernike_coeffients(self, z_coes, update_scr=True):
-        if isinstance(z_coes,np.ndarray):
-            assert len(z_coes.shape)==2,z_coes.shape
-            batch=z_coes.shape[0]
-            if z_coes.shape[1]<self.znum:
-                padding = np.zeros([batch,self.znum-z_coes.shape[1]])
-                z_coes = np.concatenate([z_coes,padding],axis=1)
-            assert z_coes.shape[1]==self.znum
+        if isinstance(z_coes, np.ndarray):
+            assert len(z_coes.shape) == 2, z_coes.shape
+            batch = z_coes.shape[0]
+            if z_coes.shape[1] < self.znum:
+                padding = np.zeros([batch, self.znum - z_coes.shape[1]])
+                z_coes = np.concatenate([z_coes, padding], axis=1)
+            assert z_coes.shape[1] == self.znum
             self.z_coes_stack = z_coes
             self.batch = self.z_coes_stack.shape[0]
         else:
             raise NotImplementedError
         if update_scr:
             self.update_screen()
+
     def update_screen(self):
         """
         批量计算相位屏
@@ -1746,20 +1789,84 @@ class BatchPhaseScreen(PhaseScreen):
         self.z_coes_stack: [batch,znum]
         self._zpoly: [N,N]
         """
-        assert self._zpolys.shape[0]==self.znum,self._zpolys.shape
-        z_coes_expand=self.z_coes_stack[:,:,None,None]
-        self.scr_stack = np.sum(z_coes_expand*self._zpolys[None,:,:,:],axis=1)
-        assert self.scr_stack.shape==(self.batch,self.N,self.N),self.scr_stack.shape
+        assert self._zpolys.shape[0] == self.znum, self._zpolys.shape
+        z_coes_expand = self.z_coes_stack[:, :, None, None]
+        self.scr_stack = np.sum(z_coes_expand * self._zpolys[None, :, :, :], axis=1)
+        assert self.scr_stack.shape == (self.batch, self.N, self.N), self.scr_stack.shape
         return self
-    def simulate_turbulence(self,Dr0,method:Literal["ft","zernike"]="zernike"):
-        if method =="ft":
+
+    def simulate_turbulence(self, Dr0, method: Literal["ft", "zernike"] = "zernike"):
+        if method == "ft":
             raise NotImplementedError
-        elif method =="zernike":
-            z_coes_stack = self.zernike_coeff_generator.generate(self.batch,self.znum,Dr0)
+        elif method == "zernike":
+            z_coes_stack = self.zernike_coeff_generator.generate(self.batch, self.znum, Dr0)
             self.set_zernike_coeffients(z_coes_stack)
         else:
             raise NotImplementedError
         return self
+
+
+def C_real(alpha=11 / 3):
+    result = (
+            1 / (2 * math.pi) ** 2
+            * gamma(alpha - 1)
+            * math.cos(alpha * math.pi / 2)
+    )
+    return result
+
+
+def C_phi(alpha):
+    result = (
+            2 ** alpha
+            * (gamma((alpha + 4) / 2)) ** 2
+            * gamma((alpha + 6) / 2)
+            * gamma((alpha + 2) / 2)
+            * math.sin(math.pi * alpha / 2)
+            / math.pi ** (alpha + 2)
+            / gamma(alpha + 3)
+    )
+
+    return result
+
+
+def A_beta(beta=11 / 3):
+    result = (
+            2 ** (beta - 2)
+            * (gamma((beta + 2) / 2)) ** 2
+            * gamma((beta + 4) / 2)
+            * gamma(beta / 2)
+            * math.sin(math.pi * (beta - 2) / 2)
+            / math.pi ** beta
+            / gamma(beta + 1)
+    )
+    return result
+
+
+def cal_n_m(n_degree):
+    n_degree += 1
+    maxj = int(n_degree * (n_degree + 1) / 2)
+    J_n = np.zeros((maxj + 1,), dtype=int)
+    J_m = np.zeros((maxj + 1,), dtype=int)
+    for n in range(n_degree):
+        for m in range(-n, n + 1):
+            if (n - abs(m)) % 2 == 0:
+
+                j = (
+                        n * (n + 1) / 2
+                        + abs(m)
+                )
+                if m > 0 and (n % 4 == 0 or n % 4 == 1):
+                    ...
+                if m < 0 and (n % 4 == 2 or n % 4 == 3):
+                    ...
+                if m >= 0 and (n % 4 == 2 or n % 4 == 3):
+                    j += 1
+                if m <= 0 and (n % 4 == 0 or n % 4 == 1):
+                    j += 1
+                j = int(j)
+                J_n[j] = n
+                J_m[j] = m
+    return J_n, J_m
 
 
 if __name__ == "__main__":
@@ -1767,9 +1874,22 @@ if __name__ == "__main__":
     # ph = FtPhaseScreen(1, N)
     # z = PhaseScreen(N=64)
     # z.fit(ph)
+    # ps=PhaseScreen()
+    # ps.simulate_turbulence(Dr0=15)
+    # phi=ps.get_screen()
+    # plt.imshow(phi)
+    # plt.show()
+    # print(phi)
+    # bps = BatchPhaseScreen(batch=1, N=SCREEN_SIZE)
+    # bps.simulate_turbulence(1)
     ps=PhaseScreen()
-    ps.simulate_turbulence(Dr0=15)
-    phi=ps.get_screen()
-    plt.imshow(phi)
-    plt.show()
-    print(phi)
+    ps.simulate_turbulence(5e-3,10,0.1,0.5,11/3)
+    print(C_phi(5 / 3))
+    print(C_real(11 / 3))
+    print(A_beta(11 / 3))
+    # print(A_alpha(11 / 3))
+    Jn, Jm = cal_n_m(5)
+    print(abs(Jm))
+    print(Jn)
+    # print(B(5/3))
+    # print(0.49/(2*math.pi)**(5/3))

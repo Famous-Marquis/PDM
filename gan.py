@@ -10,6 +10,7 @@ from tensorflow.keras.optimizers.schedules import ExponentialDecay
 
 from Train import frechet_distance
 from config import MODEL_CONFIG
+from metrics import FD_calculator
 from plot_struct import plot_struct
 
 print(sys.path)
@@ -94,7 +95,7 @@ class GAN(keras.Model):
         samples = samples.stack()
         samples = tf.reshape(samples, (sample_num, -1))
         return samples
-
+    @tf.function
     def train_step(self, real_z: tf.Tensor):
         """
         进行单步训练，更新判别器和生成器的权重。
@@ -206,6 +207,7 @@ class GANMonitor(keras.callbacks.Callback):
         self.real_samples_num = real_zernike.shape[0]
         self.latent_dim = latent_dim
         self.ckpt_path = MODEL_CONFIG["gan_checkpoint_path"]
+        self.FD_calculator=FD_calculator(real_zernike)
         self.fds = []
 
     def on_epoch_end(self, epoch, logs=None):
@@ -213,7 +215,7 @@ class GANMonitor(keras.callbacks.Callback):
             shape=(self.real_samples_num, self.latent_dim)
         )
         generated_zernike = self.model.generator(random_latent_vectors)
-        fd = frechet_distance(generated_zernike.numpy(), self.real_zernike)
+        fd = self.FD_calculator.frechet_distance(np.array(generated_zernike))
         self.fds.append(fd)
         logs["val_loss"] = fd
         print("epoch {} FD : {}".format(epoch, fd))
@@ -224,7 +226,7 @@ class GANMonitor(keras.callbacks.Callback):
         z = tf.random.normal(shape=(maxlen, self.latent_dim))
         generated_zernike = self.model.generator(z)
         generated_zernike = generated_zernike.numpy()
-        fig, axes = plt.subplots(nrows=6, ncols=6, figsize=(10, 5))
+        fig, axes = plt.subplots(nrows=3, ncols=3, figsize=(10, 5))
         for i, ax in enumerate(axes.flat):
             bar = ax.imshow(generated_zernike[i][None, :], aspect='auto', cmap="viridis")
             fig.colorbar(bar, ax=ax, orientation='vertical')
@@ -289,13 +291,13 @@ class GANHelper:
     - evaluate: 评估生成器在随机潜在向量上的性能。
     """
 
-    def __init__(self):
+    def __init__(self,data_path):
         self.zernike_dim = ZERNIKE_NUMS
         self.latent_dim = 128
         self.data_length = 4000
         self.model_config = MODEL_CONFIG
         self.ckpt_path = self.model_config["gan_checkpoint_path"]
-        self.data_path = self.model_config["data_path"]
+        self.data_path = data_path
         generator = self.build_generator()
         discriminator = self.build_discriminator()
         self.scr = PhaseScreen()
@@ -362,6 +364,7 @@ class GANHelper:
             tf_dataset,
             epochs=epochs,
             callbacks=callbacks,
+            shuffle=True,
         )
 
         return history
@@ -370,8 +373,7 @@ class GANHelper:
             self, batch
     ):
         # prepare test batch_data
-        data_series = pandas.read_pickle(self.data_path)
-        data_matrix = np.stack(data_series).astype(np.float32)
+        data_matrix = np.load(self.data_path).astype(np.float32)
         dataset = tf.data.Dataset.from_tensor_slices(data_matrix)
         dataset = dataset.shuffle(buffer_size=10 * batch).batch(batch,
                                                                 drop_remainder=True).prefetch(

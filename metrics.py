@@ -19,15 +19,51 @@ def compare_pca_spectrum(x, y, k=10):
     spectrum_y = pca_y.explained_variance_ratio_
     return np.linalg.norm(spectrum_x - spectrum_y)
 
+def calculate_mean_cov(z):
+    mean = np.mean(z, axis=0)
+    cov = np.cov(z, rowvar=False)
+    return mean, cov
+class FD_calculator(object):
+    def __init__(self,real_data,epsilon=1e-6):
+        self.epsilon = epsilon
+        self.real_cov = np.cov(real_data, rowvar=False)
+        self.real_cov = np.eye(self.real_cov.shape[0]) * self.epsilon
+        self.real_mean = np.mean(real_data)
+    def frechet_distance(self,y,verbose=True):
+        # assert isinstance(x, np.ndarray)
+        assert isinstance(y, np.ndarray)
+        mu_y, cov_y = calculate_mean_cov(y)
+
+        # Step 2: 添加正则项以增强协方差稳定性
+        cov_y += np.eye(cov_y.shape[0]) * self.epsilon
+
+        # Step 3: 矩阵乘积开方计算
+        cov_prod = self.real_cov @ cov_y
+        sqrt_prod = sqrtm(cov_prod)
+
+        # Step 4: 如果有复数误差，取实部 + 强制对称化
+        if np.iscomplexobj(sqrt_prod):
+            if verbose:
+                print("Warning: sqrtm produced complex values. Taking real part.")
+            sqrt_prod = np.real(sqrt_prod)
+
+        sqrt_prod = (sqrt_prod + sqrt_prod.T) / 2.0  # 强制对称化（关键）
+
+        # Step 5: 检查 sqrt_prod 是否异常
+        if not np.all(np.isfinite(sqrt_prod)):
+            raise ValueError("Matrix sqrtm failed: contains NaN or Inf")
+
+        # Step 6: 计算 trace 和最终的 FID
+        diff = self.real_mean - mu_y
+        trace_term = np.trace(self.real_cov + cov_y - 2 * sqrt_prod)
+        fid = diff.dot(diff) + trace_term
+
+        return max(fid, 0.0)
+
+
 def frechet_distance(x, y, epsilon=1e-6, verbose=True):
     assert isinstance(x, np.ndarray)
     assert isinstance(y, np.ndarray)
-
-    def calculate_mean_cov(z):
-        mean = np.mean(z, axis=0)
-        cov = np.cov(z, rowvar=False)
-        return mean, cov
-
     # Step 1: 均值和协方差
     mu_x, cov_x = calculate_mean_cov(x)
     mu_y, cov_y = calculate_mean_cov(y)
@@ -137,14 +173,14 @@ def compare_models_with_pca(real_data, gan_data, ddpm_data, ddim_data, csv_name,
     GAN_FD = frechet_distance(real_data, gan_data)
     DDPM_FD = frechet_distance(real_data, ddpm_data)
     DDIM_FD = frechet_distance(real_data, ddim_data)
-    result=pd.DataFrame([{"GAN_FD":GAN_FD,"DDPM_FD":DDPM_FD,"DDIM_FD":DDIM_FD}])
+    result=pd.DataFrame([{"GAN_FD":GAN_FD,"ddpm_FD":DDPM_FD,"DDIM_FD":DDIM_FD}])
     if not os.path.exists(csv_name):
         result.to_csv(csv_name, index=False)
     else:
         result.to_csv(csv_name, mode='a', index=False,header=False)
-    print(f'GAN_FD: {GAN_FD:.4f},  DDPM_FD: {DDPM_FD:.4f},  DDIM_FD: {DDIM_FD:.4f}')
+    print(f'GAN_FD: {GAN_FD:.4f},  ddpm_FD: {DDPM_FD:.4f},  DDIM_FD: {DDIM_FD:.4f}')
 
-def compare_structure(real_data, ddpm_data, gan_data,ddim_data,maxlen,csv_name,name=''):
+def compare_structure(real_data, ddpm_data, gan_data,maxlen,csv_name,name=''):
     def nrmse(real_struct, fake_struct):
         if real_struct.shape[0] != fake_struct.shape[0]:
 
@@ -158,18 +194,16 @@ def compare_structure(real_data, ddpm_data, gan_data,ddim_data,maxlen,csv_name,n
         return result
 
     D_mean_ddpm,D_std_ddpm, r_over_r0_ddpm = plot_struct(ddpm_data[:maxlen])
-    D_mean_ddim,D_std_ddim, r_over_r0_ddim = plot_struct(ddim_data[:maxlen])
     D_mean_gan, D_std_gan,r_over_r0_gan = plot_struct(gan_data[:maxlen])
     D_mean,D_std, r_over_r0 = plot_struct(real_data[:maxlen])
     fig = plt.figure(figsize=(6, 4))
     plt.plot(r_over_r0, D_mean, 'go-', label='ground truth $D_\phi(r)$')
-    plt.fill_between(r_over_r0, D_mean-D_std,D_mean+D_std,color='green',alpha=0.3)
+    # plt.fill_between(r_over_r0, D_mean-D_std,D_mean+D_std,color='green',alpha=0.3)
     plt.plot(r_over_r0_ddpm, D_mean_ddpm, 'ro-', label='ddpm sampled $D_\phi(r)$')
-    plt.fill_between(r_over_r0, D_mean_ddpm-D_std_ddpm,D_mean_ddpm+D_std_ddpm,color='red',alpha=0.3)
-    plt.plot(r_over_r0_ddim, D_mean_ddim, 'co-', label='ddim sampled $D_\phi(r)$')
-    plt.fill_between(r_over_r0, D_mean_ddim-D_std_ddim,D_mean_ddim+D_std_ddim,color='cyan',alpha=0.3)
+    # plt.fill_between(r_over_r0, D_mean_ddpm-D_std_ddpm,D_mean_ddpm+D_std_ddpm,color='red',alpha=0.3)
+
     plt.plot(r_over_r0_gan, D_mean_gan, 'bo-', label='gan sampled $D_\phi(r)$')
-    plt.fill_between(r_over_r0, D_mean_gan-D_std_gan,D_mean_gan+D_std_gan,color='blue',alpha=0.3)
+    # plt.fill_between(r_over_r0, D_mean_gan-D_std_gan,D_mean_gan+D_std_gan,color='blue',alpha=0.3)
     plt.xlabel(r'$r / r_0$')
     plt.ylabel(r'$D_\phi(r)$')
     plt.title('1D radial structure function')
@@ -182,17 +216,16 @@ def compare_structure(real_data, ddpm_data, gan_data,ddim_data,maxlen,csv_name,n
 
     nrmse_ddpm = nrmse(D_mean, D_mean_ddpm)
     nrmse_gan = nrmse(D_mean, D_mean_gan)
-    nrmse_ddim = nrmse(D_mean, D_mean_ddim)
-    print(f'GAN_NRMSE: {nrmse_gan:.4f}, DDPM_NRMSE: {nrmse_ddpm:.4f}, DDIM_NRMSE: {nrmse_ddim:.4f}')
-    result=pd.DataFrame([{"GAN_NRMSE": nrmse_gan,"DDPM_NRMSE": nrmse_ddpm,"DDIM_NRMSE": nrmse_ddim}])
+    # nrmse_ddim = nrmse(D_mean, D_mean_ddim)
+    print(f'GAN_NRMSE: {nrmse_gan:.4f}, ddpm_nrmse: {nrmse_ddpm:.4f}')
+    result=pd.DataFrame([{"GAN_NRMSE": nrmse_gan,"ddpm_nrmse": nrmse_ddpm}])
     if not os.path.exists(csv_name):
         result.to_csv(csv_name,index=False)
     else:
         result.to_csv(csv_name,header=False,index=False,mode='a')
     np.savez(f'./Record/struct{name}',D_mean=D_mean,D_std=D_std,
                                          D_mean_gan=D_mean_gan,D_std_gan=D_std_gan,
-                                         D_mean_ddpm=D_mean_ddpm,D_std_ddpm=D_std_ddpm,
-                                         D_mean_ddim=D_mean_ddim,D_std_ddim=D_std_ddim,)
+                                         D_mean_ddpm=D_mean_ddpm,D_std_ddpm=D_std_ddpm,)
 
     # todo: 样本数-NRMSE图
     # fig1 = plt.figure(figsize=(6, 4))
@@ -205,16 +238,16 @@ def compare_structure(real_data, ddpm_data, gan_data,ddim_data,maxlen,csv_name,n
     # plt.savefig("./SampledImgs/NRMSE.png", dpi=300)
     # plt.close(fig1)
 
-def compare_pca_norm(real_data,gan_data,ddpm_data,ddim_data,csv_name):
+def compare_pca_norm(real_data,gan_data,ddpm_data,csv_name):
     ddpm_norm=compare_pca_spectrum(real_data,ddpm_data)
-    ddim_norm=compare_pca_spectrum(real_data,ddim_data)
+    # ddim_norm=compare_pca_spectrum(real_data,ddim_data)
     gan_norm=compare_pca_spectrum(real_data,gan_data)
-    result=pd.DataFrame([{"GAN_norm":gan_norm,"DDPM_norm":ddpm_norm,"DDIM_norm":ddim_norm}])
+    result=pd.DataFrame([{"GAN_norm":gan_norm,"DDPM_norm":ddpm_norm}])
     if not os.path.exists(csv_name):
         result.to_csv(csv_name,index=False)
     else:
         result.to_csv(csv_name,header=False,index=False,mode='a')
-    print(f'GAN_norm:{gan_norm:.4f}, DDPM_norm:{ddpm_norm:.4f}, DDIM_norm:{ddim_norm:.4f}')
+    print(f'GAN_norm:{gan_norm:.4f}, DDPM_norm:{ddpm_norm:.4f}')
 
 if __name__ == '__main__':
     real_data=pandas.read_pickle('./Datasets/merged_data-10~15.pkl')
@@ -222,8 +255,8 @@ if __name__ == '__main__':
     ddpm_data=np.load('./Datasets/samples_ddpm-10~15.npy')
     ddim_data=np.load('./Datasets/samples_ddim-10~15.npy')
     gan_data=np.load('./Datasets/samples_gan-10~15.npy')
-    compare_structure(real_data,ddpm_data=ddpm_data,gan_data=gan_data,ddim_data=ddim_data,maxlen=5000)
-    compare_models_with_pca(real_data,gan_data=gan_data,ddpm_data=ddpm_data,ddim_data=ddim_data)
-    compare_pca_norm(real_data,gan_data=gan_data,ddpm_data=ddpm_data,ddim_data=ddim_data)
+    compare_structure(real_data,ddpm_data=ddpm_data,gan_data=gan_data,maxlen=5000)
+    compare_models_with_pca(real_data,gan_data=gan_data,ddpm_data=ddpm_data,csv_name='')
+    compare_pca_norm(real_data,gan_data=gan_data,ddpm_data=ddpm_data,csv_name='')
     # compare_speed(sample_num=200, N=1024, batch_size=1)
 

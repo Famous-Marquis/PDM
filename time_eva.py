@@ -1,24 +1,28 @@
+import os
 import time
 
+import pandas as pd
 from tqdm import tqdm
 
 from PHASE_SCREEN import timing_per_screen
 from PSD import Kolmogorov
 from Train import DDPMTrainer
 from aberration import BatchPhaseScreen
+from config import MODEL_CONFIG
 from gan import GANHelper
-
+import tensorflow as tf
 
 def compare_speed(sample_num,N,batch_size):
     # todo: 一次性结束对不同N的比较
     DDPM_trainer = DDPMTrainer(model_config=MODEL_CONFIG)
     gan_helper=GANHelper()
     init_start=time.time()
+    samples_ddpm = DDPM_trainer.ddpm.generate_samples(sample_num).numpy()
     phase_screen = BatchPhaseScreen(N=N,batch=batch_size)
     init_end=time.time()
     init_time = init_end - init_start
+
     print(f'Zernike polynomial time:{init_time}')
-    samples_ddpm = DDPM_trainer.ddpm.generate_samples(sample_num).numpy()
     # timing-ddpm
     print("start")
     start_time = time.time()
@@ -33,10 +37,10 @@ def compare_speed(sample_num,N,batch_size):
         # 设置当前batch的zernike系数并更新相位屏
         phase_screen.set_zernike_coeffients(current_batch,update_scr=True)
     end_time=time.time()
-    time_per_screen = (end_time-start_time)/sample_num
-    time_per_coeff = (end_time_generated_coeff-start_time)/sample_num
-    print(f'Time per screen-DDPM: {time_per_screen:.3f}')
-    print(f'Time per coeff-DDPM:{time_per_coeff:.3f}')
+    time_per_screen_DDPM = (end_time-start_time)/sample_num
+    time_per_coeff_DDPM = (end_time_generated_coeff-start_time)/sample_num
+    print(f'Time per screen-DDPM: {time_per_screen_DDPM:.5f}')
+    print(f'Time per coeff-DDPM:{time_per_coeff_DDPM:.5f}')
     # timing-gan
     start_time = time.time()
     samples_gan = gan_helper.gan.generate_samples(sample_num).numpy()
@@ -50,13 +54,25 @@ def compare_speed(sample_num,N,batch_size):
         # 设置当前batch的zernike系数并更新相位屏
         phase_screen.set_zernike_coeffients(current_batch, update_scr=True)
     end_time = time.time()
-    time_per_screen = (end_time - start_time) / sample_num
-    time_per_coeff = (end_time_generated_coeff-start_time)/sample_num
-    print(f'Time per screen-gan: {time_per_screen:.3f}')
-    print(f'Time per coeff-gan:{time_per_coeff:.3f}')
+    time_per_screen_GAN = (end_time - start_time) / sample_num
+    time_per_coeff_GAN = (end_time_generated_coeff-start_time)/sample_num
+    print(f'Time per screen-gan: {time_per_screen_GAN:.5f}')
+    print(f'Time per coeff-gan:{time_per_coeff_GAN:.5f}')
     # timing-fft-sh
     D=2
     dx=D/N
     sub_harm=4
     psd=Kolmogorov
-    timing_per_screen(repeat_num=sample_num,N=N,dx=dx,psd=psd,sub_harm=sub_harm)
+    time_FFT=timing_per_screen(repeat_num=sample_num,N=N,dx=dx,psd=psd,sub_harm=sub_harm)
+    csv_name='./Record/speed.csv'
+    result=pd.DataFrame([{"GAN_time":time_per_screen_GAN,"DDPM_time":time_per_screen_DDPM,"FFT_time":time_FFT}])
+    if not os.path.exists(csv_name):
+        result.to_csv(csv_name, index=False)
+    else:
+        result.to_csv(csv_name, header=False, index=False, mode='a')
+if __name__=='__main__':
+    A=tf.constant([1.,2.])
+    B=tf.constant([3.,4.])
+    C=tf.reduce_sum(A)
+    print(C)
+    compare_speed(sample_num=100,N=2048,batch_size=1)

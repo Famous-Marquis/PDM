@@ -1,43 +1,77 @@
+import gc
+import os
+
 import numpy as np
 import pandas
+from tensorflow.keras.backend import clear_session
 
+from Train import DDPMTrainer
 from VGG import train_VGG
-from metrics import compare_structure, compare_pca_norm, compare_models_with_pca
+from aberration import PhaseScreen
+from config import MODEL_CONFIG
+from gan import GANHelper
+from generate_data import gen_img_label, gen_data
+from metrics import compare_structure
 
+params = {
+    'r0': 0.05, 'l0': 5e-3, 'L0': 10, "R": 0.5, "alpha": 11 / 3
+}
 if __name__ == '__main__':
-    # generate_data(length_per_Dr0=10, nums_Dr0=10,
-    #               Dr0_range=list(np.linspace(10., 15., num=10, endpoint=True, dtype=float)))
-    # pkl = pd.read_pickle("./Datasets/merged_data.pkl")
-    # gen_img_label('./Datasets/test_data-10~15.pkl', 'test')
-    # gen_img_label('./Datasets/samples_ddpm1-10~15.npy','ddpm1-10~15')
-    # gen_img_label('./Datasets/samples_ddpm2-10~15.npy','ddpm2-10~15')
-    # gen_img_label('./Datasets/samples_ddpm3-10~15.npy', 'ddpm3-10~15')
-    #
-    # gen_img_label('./Datasets/samples_gan1-10~15.npy','gan1-10~15')
-    # gen_img_label('./Datasets/samples_gan2-10~15.npy','gan2-10~15')
-    # gen_img_label('./Datasets/samples_gan3-10~15.npy','gan3-10~15')
-    # gen_img_label('./Datasets/merged_data-10~15.pkl','real')
-    # gen_data((25, 1, [5, 6], 1, 1))
-    ################################################################
-    real_data = pandas.read_pickle('./Datasets/merged_data-10~15.pkl')
-    real_data = np.stack(real_data, axis=0).astype(np.float32)
-    for i in ['1', '2', '3']:
-        ddpm_data = np.load(f'./Datasets/samples_ddpm{i}-10~15.npy')
-        ddim_data = np.load(f'./Datasets/samples_ddim{i}-10~15.npy')
-        gan_data = np.load(f'./Datasets/samples_gan{i}-10~15.npy')
-        compare_structure(real_data, ddpm_data=ddpm_data, gan_data=gan_data, ddim_data=ddim_data,
-                          maxlen=5000, csv_name='./Record/nrmse-10~15.csv')
-        compare_models_with_pca(real_data, gan_data=gan_data, ddpm_data=ddpm_data,
-                                ddim_data=ddim_data, csv_name='./Record/FD-10~15.csv')
-        compare_pca_norm(real_data, gan_data=gan_data, ddpm_data=ddpm_data, ddim_data=ddim_data,
-                         csv_name='./Record/norm-10~15.csv')
+    size = "5000"
+    length = 5000
+    # s = pandas.read_pickle('./Datasets/merged_data-param1-s.pkl')
+    # s = np.stack(s).shape
+    # print(s)
+    ps = PhaseScreen()
+    # gen_data(r0=params['r0'], l0=params['l0'], L0=params['L0'], R=params['R'],
+    #          alpha=params['alpha'], ps=ps, nums=100, name=f'./Datasets/test-param1-{size}.npy')
+    # gen_data(r0=params['r0'], l0=params['l0'], L0=params['L0'], R=params['R'],
+    #          alpha=params['alpha'], ps=ps, nums=length, name=f'./Datasets/train-param1-{size}.npy')
+    # 训练模型
+    for i in ['1']:
+        DDPM_trainer = DDPMTrainer(model_config=MODEL_CONFIG,data_path=f'./Datasets/train-param1-{size}.npy')
+        DDPM_trainer.ddpm.build(input_shape=(MODEL_CONFIG["d_model"],))
+        DDPM_trainer.train()
+        DDPM_trainer.summary()
 
-    train_VGG(data_name='ddpm1-10~15', test_data_name='test-10~15', name='ddpm1-10~15')
-    train_VGG(data_name='ddpm2-10~15', test_data_name='test-10~15', name='ddpm2-10~15')
-    train_VGG(data_name='ddpm3-10~15', test_data_name='test-10~15', name='ddpm3-10~15')
-    train_VGG(data_name='gan1-10~15', test_data_name='test-10~15', name='gan1-10~15')
-    train_VGG(data_name='gan2-10~15', test_data_name='test-10~15', name='gan2-10~15')
-    train_VGG(data_name='gan3-10~15', test_data_name='test-10~15', name='gan3-10~15')
-    train_VGG(data_name='real-10~15', test_data_name='test-10~15', name='1real-10~15')
-    train_VGG(data_name='real-10~15', test_data_name='test-10~15', name='2real-10~15')
-    train_VGG(data_name='real-10~15', test_data_name='test-10~15', name='3real-10~15')
+        gan_helper = GANHelper(data_path=f'./Datasets/train-param1-{size}.npy')
+        gan_helper.train()
+        try:
+            raise FileNotFoundError
+        except FileNotFoundError:
+            samples_ddpm = DDPM_trainer.ddpm.generate_samples(5000).numpy()
+            np.save(f"Datasets/samples_ddpm{i}-param1-{size}.npy", samples_ddpm)
+
+            samples_gan = gan_helper.gan.generate_samples(5000).numpy()
+            np.save(f"Datasets/samples_gan{i}-param1-{size}.npy", samples_gan)
+            clear_session()
+            gc.collect()
+    # for i in ['1', '2', '3']:
+    #     gen_img_label(f'./Datasets/samples_ddpm{i}-param1-{size}.npy', f'ddpm{i}-param1-{size}',ps=ps)
+    #     gen_img_label(f'./Datasets/samples_gan{i}-param1-{size}.npy', f'gan{i}-param1-{size}',ps=ps)
+    # gen_img_label(f'./Datasets/test-param1-{size}.npy', f'test-param1-{size}',ps=ps)
+    # gen_img_label(f'./Datasets/train-param1-{size}.npy', f'real-param1-{size}',ps=ps)
+
+    # 比较样本
+    ##############################################################
+    real_data = np.load(f'./Datasets/train-param1-{size}.npy')
+
+    # for i in ['1', '2', '3']:
+    #     ddpm_data = np.load(f'./Datasets/samples_ddpm{i}-param1-{size}.npy')
+    #     gan_data = np.load(f'./Datasets/samples_gan{i}-param1-{size}.npy')
+    #     compare_structure(real_data, ddpm_data=ddpm_data, gan_data=gan_data,
+    #                       maxlen=5000, csv_name=f'./Record/nrmse-param1-{size}.csv',
+    #                       name=f'{i}-param1-{size}')
+        # compare_pca_norm(real_data, gan_data=gan_data, ddpm_data=ddpm_data,
+        #                  csv_name=f'./Record/norm-param1-{size}.csv')
+    # 训练一下真实的样本
+    # for i in ['1', '2', '3']:
+    #     train_VGG(data_name=f'ddpm{i}-param1-{size}.npy', test_data_name=f'test-param1-{size}',
+    #               name=f'ddpm{i}-param1-{size}.npy', kind='DDPM')
+    #     train_VGG(data_name=f'gan{i}-param1-{size}.npy', test_data_name=f'test-param1-{size}',
+    #               name=f'gan{i}-param1-{size}.npy', kind='GAN')
+    #     train_VGG(data_name=f'real-param1-{size}.npy', test_data_name=f'test-param1-{size}',
+    #               name=f'{i}real-param1-{size}.npy', kind='\"Real\"')
+    #     os.remove(f'ddpm{i}-param1-{size}.npy')
+    #     os.remove(f'gan{i}-param1-{size}.npy')
+    #     os.remove(f'real-param1-{size}.npy')

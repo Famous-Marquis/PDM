@@ -8,12 +8,17 @@
 import numpy as np
 import math
 import matplotlib.pyplot as plt
+
+from scipy import signal
+
+from aberration import PhaseScreen, BatchPhaseScreen
+
 from matlab import meshgrid, cart2pol
 from PIL import Image
 
 
 def LG_mode(
-    l=4, N=1024, w=0.75e-2, wvl=0.532e-6, d1=2.65e-4, p=0, z=1000, need_coord=False
+    l=4, N=512, w=0.75e-2, wvl=0.532e-6, d1=2.65e-4, p=0, z=1000, need_coord=False
 ):
     """计算LG_mode"""
     k = 2 * np.pi / wvl
@@ -89,6 +94,41 @@ def OAM_mode(mode, size=224):
 
 
 if __name__ == "__main__":
+    ps = BatchPhaseScreen(batch=1)
+    mode_list = [
+        (1),
+        (-2),
+        (3),
+        (-5),
+        (1, -2),
+        (1, 3),
+        (1, -5),
+        (-2, 3),
+        (-2, 5),
+        (3, -5),
+        (1, -2, 3),
+        (1, -2, -5),
+        (1, 3, -5),
+        (-2, 3, -5),
+        (1, 3, -2, -5),
+    ]
+    fig, axs = plt.subplots(2,3)
+    for i,mode in enumerate(mode_list[5:8]):
 
-    u1 = LG_mode()
-    u2 = LG_mode(l=-3)
+        u1 = OAM_mode(mode)
+        # u2 = LG_mode(l=-3)
+        axs[0,i].imshow(u1)
+        axs[0,i].set_xticks([])
+        axs[0,i].set_yticks([])
+
+        ps.simulate_turbulence(7)
+        # ps.update_screen()
+        psf = abs(ps.get_psf())
+        print(psf.shape,psf.dtype)
+        print(u1.shape)
+        image = signal.fftconvolve(psf, u1, "same")
+        axs[1,i].imshow(image)
+        axs[1,i].set_xticks([])
+        axs[1,i].set_yticks([])
+    fig.tight_layout()
+    fig.savefig("beam.pdf")
