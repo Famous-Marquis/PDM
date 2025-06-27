@@ -48,7 +48,7 @@ class GAN(keras.Model):
     -------------
     d_optimizer : keras.optimizers.Optimizer
         判别器模型的优化器。
-    g_optimizer : keras.optimizers.Optimizer
+    encoder_optimizer : keras.optimizers.Optimizer
         生成器模型的优化器。
     loss_fn : keras.losses.Loss
         用于训练GAN的损失函数。
@@ -215,7 +215,7 @@ class GANMonitor(keras.callbacks.Callback):
             shape=(self.real_samples_num, self.latent_dim)
         )
         generated_zernike = self.model.generator(random_latent_vectors)
-        fd = self.FD_calculator.frechet_distance(np.array(generated_zernike))
+        fd = frechet_distance(self.real_zernike,np.array(generated_zernike))
         self.fds.append(fd)
         logs["val_loss"] = fd
         print("epoch {} FD : {}".format(epoch, fd))

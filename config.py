@@ -6,11 +6,11 @@ MODEL_CONFIG = {
     "model_name": 'DDPM',
     "predict_cov": False,  # True or False
     "cosine_schedule": False,
-    "beta_1": 0.01,
-    "beta_T": 0.05,  # 调节这两个参数，使得正向扩散的终点接近高斯噪声
-    "T": 30,
-    "epochs": 100,
-    "GAN_epochs": 100,
+    "beta_1": 1e-5,#1e-5
+    "beta_T": 0.035,  # 0.095调节这两个参数，使得正向扩散的终点接近高斯噪声
+    "T": 50,
+    "epochs": 200,
+    "GAN_epochs": 200,
     "batch_size": 64,
     "lr_min": 0.01,  # 0.01,
     "lr_max": 0.3,  # 0.3,
@@ -23,7 +23,7 @@ MODEL_CONFIG = {
     "d_model": ZERNIKE_NUMS,  # 系数长度
     "load_weights": False,
     "GAN_load_weights": False,
-    "model_mean_struct": [512,512,512],  # [List] 均值神经网络: 全连接层的神经元数
+    "model_mean_struct": [512,2048,4096],  # 256,1024,256/[List] 均值神经网络: 全连接层的神经元数
     "model_v_struct": [512, 2048],  # [List] 协方差神经网络: 全连接层的神经元数
 
     "generate_new_data": False,

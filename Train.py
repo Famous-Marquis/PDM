@@ -36,7 +36,7 @@ class DDPMMonitor(keras.callbacks.Callback):
         x_T = tf.random.normal((max_len, self.real_data.shape[1]))
         generated_data = self.model.denoise(x_T)
         generated_data = generated_data.numpy()
-        fd = self.FD_calculator.frechet_distance(generated_data)
+        fd = frechet_distance(self.real_data,generated_data)
         self.fds.append(fd)
         # pca=compare_pca_spectrum(self.real_data[:max_len], generated_data)
         # self.pcas.append(pca)
@@ -139,6 +139,7 @@ class DDPMTrainer:
 
     def load_data(self, batch_size):
         data_matrix = np.load(self.data_path).astype(np.float32)
+
         dataset = tf.data.Dataset.from_tensor_slices(data_matrix)
         dataset = dataset.shuffle(buffer_size=batch_size * 10)
         dataset = dataset.batch(batch_size, drop_remainder=True).prefetch(

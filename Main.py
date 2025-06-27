@@ -1,6 +1,6 @@
 import pandas
 import tensorflow as tf
-from metrics import compare_models_with_pca
+from metrics import compare_FD
 from Train import DDPMTrainer
 from config import MODEL_CONFIG, MODEL_CONFIG2
 from gan import GANHelper
@@ -33,9 +33,9 @@ if __name__ == '__main__':
             samples_ddpm = DDPM_trainer.ddpm.generate_samples(5000).numpy()
             np.save(f"Datasets/samples_ddpm{i}-10~15-{size}.npy", samples_ddpm)
             # samples_ddim = DDIM_trainer.ddpm.generate_samples(5000).numpy()
-            # np.save(f"Datasets/samples_ddim{i}-10~15-{size}.npy", samples_ddim)
+            # np.save(model_struct"Datasets/samples_ddim{i}-10~15-{size}.npy", samples_ddim)
             # samples_gan = gan_helper.gan.generate_samples(5000).numpy()
-            # np.save(f"Datasets/samples_gan{i}-10~15-{size}.npy", samples_gan)
+            # np.save(model_struct"Datasets/samples_gan{i}-10~15-{size}.npy", samples_gan)
             clear_session()
             gc.collect()
     # data_series = pandas.read_pickle(MODEL_CONFIG["data_path"])

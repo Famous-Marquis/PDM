@@ -1,10 +1,11 @@
 from typing import List
 
+import numpy as np
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers, regularizers, initializers
 
-from aberration import ZERNIKE_NUMS
+from metrics import FD_calculator
 
 
 class TimeEmbedding(layers.Layer):
@@ -36,47 +37,64 @@ class TimeEmbedding(layers.Layer):
         return emb
 
 
+# todo: 降低扩散难度
+'''
+编码器：(L,)->(N,N), where N = lower integer of √L   
+解码器:(L,)<-(N,N)
+
+扩散模型网络，深层通道的卷积，提高序列预测维度。channel unsqueeze 1->16->64->16->1 squeeze
+'''
+
+
 class FCMean(keras.Model):
     def __init__(self, d_model, model_struct: List):
         super(FCMean, self).__init__(name='FC')
         self.d_model = d_model
         self._layers = []
         # self._layers.append(keras.Input(shape=(d_model,)))
-        self.time_embedding = layers.Embedding(input_dim=1,output_dim=d_model)
+        # self.encoder = layers.Dense(units=model_struct[0], name='encoder')
+        # self.encoder_activation = layers.LeakyReLU()
+        # self.decoder = layers.Dense(units=d_model, name='decoder')
+        # self.decoder_norm = layers.LayerNormalization()
+        # self.time_embedding = TimeEmbedding(d_model)
+        self.time_embedding = layers.Embedding(input_dim=1, output_dim=d_model)
         # todo: 考虑调整Leaky ReLU的alpha(可参照GAN的网络结构)
-        for i,units in enumerate(model_struct):
-
+        for units in model_struct:
             self._layers.append(layers.Dense(units,
-                                             # kernel_regularizer=regularizers.l2(0.01),
+                                             kernel_regularizer=regularizers.l2(0.01),
                                              kernel_initializer=initializers.RandomNormal(mean=0.0,
                                                                                           stddev=0.05)))
             self._layers.append(layers.LayerNormalization())
             self._layers.append(layers.LeakyReLU())
-            self._layers.append(layers.Embedding(input_dim=1, output_dim=units))
-            # self._layers.append(layers.Dropout(0.2))
+            # self._layers.append(layers.Embedding(input_dim=1, output_dim=units))
+            self._layers.append(layers.Dropout(0.2))
 
         self._layers.append(layers.Dense(d_model,
-                                         # kernel_regularizer=regularizers.l2(0.01),
+                                         kernel_regularizer=regularizers.l2(0.01),
                                          kernel_initializer=initializers.RandomNormal(mean=0.0,
                                                                                       stddev=0.05)))
         self._layers.append(layers.LayerNormalization())
+        self._layers.append(layers.Dropout(0.2))
         # self._layers.append(layers.LeakyReLU())
 
         # self.attn=_layers.Attention()
         # self.d5 = _layers.Dropout(0.2)
 
     def call(self, x, t):
-        emb=self.time_embedding(t)
-        x=x+emb
+        # y = self.encoder(x)
+        emb = self.time_embedding(t)
+        y = x + emb
+        # y = self.encoder_activation(y)
         for layer in self._layers:
             if isinstance(layer, layers.Embedding):
-                emb=layer(t)
-                x=x+emb
+                emb = layer(t)
+                y = y + emb
             else:
-                x = layer(x)
-        # y = self.d5(x)
+                y = layer(y)
+        # y = self.decoder(y)
+        # y = self.decoder_norm(y)
 
-        return x
+        return y
 
 
 class FCCov(keras.Model):
@@ -85,7 +103,7 @@ class FCCov(keras.Model):
         self.d_model = d_model
         self._layers = []
         # self._layers.append(keras.Input(shape=(d_model,)))
-        self.time_embedding = layers.Embedding(input_dim=1,output_dim=d_model)
+        self.time_embedding = layers.Embedding(input_dim=1, output_dim=d_model)
         for units in model_struct:
             self._layers.append(layers.Dense(units, kernel_regularizer=regularizers.l2(0.01),
                                              kernel_initializer=initializers.RandomNormal(mean=0.0,
@@ -103,6 +121,7 @@ class FCCov(keras.Model):
         # self.d5 = _layers.Dropout(0.2)
 
     def call(self, x, t):
+
         emb = self.time_embedding(t)
         x = x + emb
         for layer in self._layers:
@@ -112,16 +131,183 @@ class FCCov(keras.Model):
         return y
 
 
-if __name__ == '__main__':
-    model = FCMean(d_model=ZERNIKE_NUMS)
-    model_v = FCCov(d_model=ZERNIKE_NUMS)
+class AutoEncoder(keras.Model):
+    def __init__(self, d_model, model_struct: List):
+        super().__init__()
+        self._layers = []
+        self.d_model = d_model
+        self.model_struct = model_struct
+        self.init()
 
-    # 定义输入
-    input_shape_x = ZERNIKE_NUMS
-    input_shape_t = ()
-    input_x = tf.random.uniform(shape=(64, ZERNIKE_NUMS,))
-    input_t = tf.random.uniform(shape=(64,), maxval=100, minval=0, dtype=tf.int32)
-    model(input_x, input_t)
-    model_v(input_x, input_t)
-    model.summary()
-    model_v.summary()
+    def init(self):
+        self._layers = []
+        for units in self.model_struct:
+            self._layers.append(layers.Dense(units, kernel_regularizer=regularizers.l2(0.01), ))
+            self._layers.append(layers.LayerNormalization())
+            self._layers.append(layers.LeakyReLU())
+            self._layers.append(layers.Dropout(0.2))
+        self._layers = self._layers[:-1]
+
+    def call(self, x):
+        for layer in self._layers:
+            x = layer(x)
+        return x
+
+
+class AutoDecoder(keras.Model):
+    def __init__(self, d_model, model_struct: List,conv_struct:List):
+        super().__init__()
+        self._layers = []
+        self.d_model = d_model
+        self.model_struct = model_struct
+        self.conv_struct = conv_struct
+        self.init()
+
+    def init(self):
+        for channel in self.conv_struct:
+            self._layers.append(layers.Conv1D(channel,5,2,padding='same'))
+            self._layers.append(layers.BatchNormalization())
+            self._layers.append(layers.LeakyReLU())
+            self._layers.append(layers.MaxPool1D())
+            self._layers.append(layers.Dropout(0.2))
+        # for units in reversed(self.model_struct):
+        #     self._layers.append(layers.Dense(units, kernel_regularizer=regularizers.l2(0.01), ))
+        #     self._layers.append(layers.LayerNormalization())
+        #     self._layers.append(layers.LeakyReLU())
+        #     self._layers.append(layers.Dropout(0.2))
+        self._layers = self._layers[:-1]
+
+    def call(self, x):
+        for layer in self._layers:
+            x = layer(x)
+        return x
+
+
+class Discriminator(keras.Model):
+    def __init__(self, d_model, model_struct: List,conv_struct:List):
+        super().__init__()
+        self._layers = []
+        self.d_model = d_model
+        self.model_struct = model_struct
+        self.init()
+
+    def init(self):
+        for units in self.model_struct:
+            self._layers.append(layers.Dense(units, kernel_regularizer=regularizers.l2(0.01), ))
+            self._layers.append(layers.LayerNormalization())
+            self._layers.append(layers.LeakyReLU())
+            self._layers.append(layers.Dropout(0.2))
+        self._layers.append(layers.Dense(1, kernel_regularizer=regularizers.l2(0.01), ))
+        self._layers.append(layers.Activation('sigmoid'))
+
+    def call(self, x):
+        for layer in self._layers:
+            x = layer(x)
+        return x
+
+
+class VAEMonitor(keras.callbacks.Callback):
+    def __init__(self, real_z):
+        self.real_z = real_z
+        self.FD_calculator = FD_calculator(real_z)
+
+    def on_epoch_end(self, epoch, logs=None):
+        z = self.model.encoder(self.real_z)
+        z_hat = self.model.decoder(z).numpy()
+        fd = self.FD_calculator.frechet_distance(z_hat)
+        logs['val_fd'] = fd
+        print('FD=', fd)
+        # print("FD:",fd)
+
+
+class VAE(keras.Model):
+    def __init__(self, d_model, model_struct: List):
+        super().__init__()
+        self.loss_fn_vae = None
+        self.loss_fn_disc = None
+        self.vae_optimizer = None
+        self.d_optimizer = None
+        self.d_model = d_model
+        self.model_struct = model_struct
+        self.discriminator = Discriminator(d_model, model_struct)
+        self.encoder = AutoEncoder(d_model, model_struct)
+        self.decoder: keras.Model = AutoDecoder(d_model, model_struct)
+        self.loss_tracker_vae = keras.metrics.Mean(name='loss_d')
+        self.loss_tracker_d = keras.metrics.Mean(name='loss_disc')
+        # self.loss_tracker_g = keras.metrics.Mean(name='loss_g')
+        self.latent_dim = model_struct[-1]
+
+    def compile(self, d_optimizer, vae_optimizer,
+                loss_fn_disc=keras.losses.BinaryCrossentropy(from_logits=False,
+                                                             label_smoothing=0.05),
+                loss_fn_vae=keras.losses.MeanSquaredError(), ):
+        super().compile()
+        self.d_optimizer = d_optimizer
+        # self.encoder_optimizer = encoder_optimizer
+        self.vae_optimizer = vae_optimizer
+        self.loss_fn_disc = loss_fn_disc
+        self.loss_fn_vae = loss_fn_vae
+        # self.loss_fn_decoder = loss_fn_decoder
+
+    @property
+    def metrics(self):
+        return [self.loss_tracker_d, self.loss_tracker_vae]
+
+    @tf.function
+    def train_step(self, real_x):
+        batch = tf.shape(real_x)[0]
+        z = tf.random.normal(shape=(batch, self.latent_dim))
+        generated_x = self.decoder(z)
+        labels = tf.concat([tf.ones((batch, 1)), tf.zeros((batch, 1))], axis=0)
+        coeffs = tf.concat([real_x, generated_x], axis=0)
+        # labels += 0.05 * tf.random.uniform(tf.shape(labels))
+        # 1 训练判别器
+        with tf.GradientTape() as tape:
+            predictions = self.discriminator(coeffs)
+            d_loss = self.loss_fn_disc(labels, predictions)
+        grads = tape.gradient(d_loss, self.discriminator.trainable_variables)
+        self.d_optimizer.apply_gradients(zip(grads, self.discriminator.trainable_variables))
+        self.loss_tracker_d.update_state(d_loss)
+        # 2训练编码器&训练解码器
+        with tf.GradientTape() as tape:
+            # 正确的流程是：先编码，后解码
+            z = self.encoder(real_x, training=True)
+            x_hat = self.decoder(z, training=True)
+            predictions = self.discriminator(x_hat, training=True)
+            # 重建损失（比如 L1）
+            loss_recon = self.loss_fn_vae(x_hat, real_x)
+            # 生成器的对抗损失（假样本希望判别为真，标签为1）
+            loss_adv = self.loss_fn_disc(tf.ones_like(predictions), predictions)
+            # 总损失
+            loss = loss_recon + 0.5*loss_adv
+        # 收集所有需要更新的参数
+        train_vars = self.encoder.trainable_variables + self.decoder.trainable_variables
+        # 求梯度
+        grads = tape.gradient(loss, train_vars)
+        # 更新权重
+        self.vae_optimizer.apply_gradients(zip(grads, train_vars))
+        self.loss_tracker_vae.update_state(loss)
+
+        return {"d_loss": d_loss, "vae_loss": loss}
+
+
+class AutoEncoderHelper:
+    def __init__(self, d_model, model_struct: List):
+        self.d_model = d_model
+        self.model_struct = model_struct
+        self.discriminator = Discriminator(d_model, model_struct)
+        self.encoder = AutoEncoder(d_model, model_struct)
+        self.decoder = AutoDecoder(d_model, model_struct)
+
+    def train(self):
+        ...
+
+
+if __name__ == '__main__':
+    vae = VAE(231, [231, 512, 512,231 // 2])
+    vae.compile(vae_optimizer=keras.optimizers.Adam(lr=0.0001),
+                d_optimizer=keras.optimizers.Adam(lr=0.0001), )
+    x_train = np.load("./Datasets/train-param1-5000.npy").astype(np.float32)
+    # x_train=tf.Tensor(x_train,dtype=tf.float32)
+    tf_ds = tf.data.Dataset.from_tensor_slices(x_train).shuffle(1000).batch(64)
+    vae.fit(tf_ds, epochs=500, shuffle=True, callbacks=[VAEMonitor(x_train)])

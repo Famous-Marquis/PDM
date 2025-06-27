@@ -188,9 +188,8 @@ def str_cont(w, ph):
     return 2 * w ** 2 * (1 - ph)
 
 
-def plot_struct(z_coes_array):
-    SIZE = 256
-    phase_screen = PhaseScreen(N=SIZE)
+def plot_struct(z_coes_array,R=1,r0=1):
+    phase_screen = PhaseScreen()
     r = phase_screen.r
     for i, z_coes in tqdm(enumerate(z_coes_array), total=z_coes_array.shape[0],
                           desc="computing struct..."):
@@ -218,8 +217,8 @@ def plot_struct(z_coes_array):
     assert Dphi_1d_mean.shape == Dphi_1d.shape, "形状有误"
     # 3) 转换为 r/r0
     #    假设 1个像素 = 1个长度单位(可根据实际需求改成: r_phys = radii_pix * pixel_scale)
-    r0 = 1  # 示例: 设定 Fried 参数 r0 = 10 (与像素同单位)
-    r_over_r0 = radii_pix / 1
+      # 示例: 设定 Fried 参数 r0 = 10 (与像素同单位)
+    r_over_r0 = radii_pix*R / r0
     return Dphi_1d_mean, Dphi_1d_std, r_over_r0
 
     # 4) 绘图

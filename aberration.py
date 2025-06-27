@@ -10,7 +10,7 @@ from PSD import cov_j_j_prime, modified_Von_Karman
 
 CACHE_DIR = "./cache"
 
-N_DEGREE = 20
+N_DEGREE = 10
 ZERNIKE_NUMS = int((N_DEGREE+1)*(N_DEGREE+2)/2)
 SCREEN_SIZE = 224
 ZN = [
@@ -1620,9 +1620,9 @@ class PhaseScreen:
 
         Parameter
         -------------
-        k,f : 滤镜参数
+        k,model_struct : 滤镜参数
         """
-        # lens = np.exp(-1j*k/(2*f)*(self.r**2))
+        # lens = np.exp(-1j*k/(2*model_struct)*(self.r**2))
         lens = k / (2 * f) * (self.r ** 2)
         self._scr = self.get_screen() + lens
         return self
@@ -1688,17 +1688,20 @@ class ZernikeCoefficientGenerator:
         denom[denom == 0] = 1
         # 归一化协方差矩阵
         C_normalized = C / denom
-        # print(f"C11,{C[1, 1]}")
-        # print(f"C22,{C[2, 2]}")
+        # print(model_struct"C11,{C[1, 1]}")
+        # print(model_struct"C22,{C[2, 2]}")
 
         plt.imshow(C_normalized[2:35, 2:35])
         # plt.yscale("log")
         plt.colorbar()
         plt.show()
         # SVD分解
-        plt.plot(C[1:, 1:].diagonal())
+        plt.plot(C[2:, 2:].diagonal())
         plt.yscale("log")
-        plt.xscale("log")
+        # plt.xscale("log")
+        plt.ylabel(r"$||a_j||^2$")
+        plt.xlabel("Zernike index")
+        plt.title("Non-Kolmogorov")
         plt.show()
         u, s, v = la.svd(C[2:, 2:])
 
@@ -1883,7 +1886,7 @@ if __name__ == "__main__":
     # bps = BatchPhaseScreen(batch=1, N=SCREEN_SIZE)
     # bps.simulate_turbulence(1)
     ps=PhaseScreen()
-    ps.simulate_turbulence(5e-3,10,0.1,0.5,11/3)
+    ps.simulate_turbulence(0.005,10,0.1,0.5,14/3)
     print(C_phi(5 / 3))
     print(C_real(11 / 3))
     print(A_beta(11 / 3))
