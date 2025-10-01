@@ -1,17 +1,27 @@
-import os
+# Copyright 2025 Beijing University of Posts and Telecommunications
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
+import os
 import numpy as np
-import pandas
 import tensorflow as tf
 from matplotlib import pyplot as plt
-from scipy.linalg import sqrtm
 from tensorflow import keras
-
 from Diffusion import DDPM
 from Model import FCMean, FCCov
 from aberration import ZERNIKE_NUMS
 from config import MODEL_CONFIG
-from metrics import frechet_distance, compare_pca_spectrum, FD_calculator
+from metrics import frechet_distance, FD_calculator
 from plot_struct import plot_struct, plot_struct_curve
 
 class DDPMMonitor(keras.callbacks.Callback):

@@ -1,15 +1,22 @@
-"""
-默认支持400维zernike系数
-ZM和ZN是zernike系数的索引，其中ZM的索引有两种表示方式，根据需要取用
-"""
+# Copyright 2025 Beijing University of Posts and Telecommunications
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import math
-
+from scipy.io import savemat
 from tqdm import tqdm
-
 from PSD import cov_j_j_prime, modified_Von_Karman
-
 CACHE_DIR = "./cache"
-
 N_DEGREE = 10
 ZERNIKE_NUMS = int((N_DEGREE+1)*(N_DEGREE+2)/2)
 SCREEN_SIZE = 224
@@ -1634,7 +1641,6 @@ class PhaseScreen:
         self._scr *= pupil
         return self
 
-
 class ZernikeCoefficientGenerator:
     def __init__(self):
         self.Jn = None
@@ -1704,6 +1710,7 @@ class ZernikeCoefficientGenerator:
         plt.title("Non-Kolmogorov")
         plt.show()
         u, s, v = la.svd(C[2:, 2:])
+        savemat("C.mat",{"Cov":C[1:,1:],"Cov_normalized":C_normalized[1:,1:],"C_diag":C[1:,1:].diagonal()})
 
         # 保存
         self.params_cached = [l0, L0, r0, R]

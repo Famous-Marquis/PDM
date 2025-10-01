@@ -1,7 +1,6 @@
+
 import time
-
 import tqdm
-
 import UTILS
 from numpy import pi
 from numpy.random import default_rng
@@ -25,7 +24,7 @@ def ft_phase_screen(N, dx, psd, Cn2):
     fx = np.linspace(-N // 2, N // 2, N, endpoint=False) * df
     fx, fy = np.meshgrid(fx, fx)
     f = np.sqrt(fx**2 + fy**2)
-    psd_phi = psd()(f, Cn2)
+    psd_phi = psd()(f)
 
     psd_phi[N // 2, N // 2] = 0
     cn = (
@@ -48,7 +47,7 @@ def sh_phase_screen(N, dx, psd, Cn2, sub_harm):
         fx = np.linspace(-1, 1, 3)
         fx, fy = np.meshgrid(fx, fx)
         f = np.sqrt(fx**2 + fy**2)
-        psd_phi = psd()(f, Cn2)
+        psd_phi = psd()(f)
         cn = complex(rng.normal(3), rng.normal(3)) * np.sqrt(psd_phi) * df
         sub_harmonics = np.zeros([N, N])
         for i in range(3):

@@ -1,7 +1,7 @@
 Datasets/*
 cache/*
 .vscode/
-Checkpoints/ckpt_*
+Checkpoints/*
 Image/*
 SampledImgs/*
 Record/*

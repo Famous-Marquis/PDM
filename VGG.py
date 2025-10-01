@@ -1,14 +1,14 @@
 import os
-
+import tensorflow as tf
 import numpy as np
 import tensorflow.keras as keras
 from keras.callbacks import ModelCheckpoint
 from matplotlib import pyplot as plt
+from scipy.io import savemat
 from tensorflow.keras.layers import Conv2D, BatchNormalization, Activation, MaxPool2D, Dropout, \
     Flatten, Dense
 from tensorflow.keras import backend as K
 import gc
-
 from generate_data import beam_list
 
 
@@ -25,20 +25,20 @@ class VGG16(keras.Model):
         self.d1 = Dropout(0.2)  # dropout层
 
         self.c3 = Conv2D(filters=128, kernel_size=(3, 3), padding='same')
-        self.b3 = BatchNormalization()  # BN层1
-        self.a3 = Activation('relu')  # 激活层1
+        self.b3 = BatchNormalization()  # BN层2
+        self.a3 = Activation('relu')  # 激活层2
         self.c4 = Conv2D(filters=128, kernel_size=(3, 3), padding='same')
-        self.b4 = BatchNormalization()  # BN层1
-        self.a4 = Activation('relu')  # 激活层1
+        self.b4 = BatchNormalization()  # BN层2
+        self.a4 = Activation('relu')  # 激活层2
         self.p2 = MaxPool2D(pool_size=(2, 2), strides=2, padding='same')
         self.d2 = Dropout(0.2)  # dropout层
 
         self.c5 = Conv2D(filters=256, kernel_size=(3, 3), padding='same')
-        self.b5 = BatchNormalization()  # BN层1
-        self.a5 = Activation('relu')  # 激活层1
+        self.b5 = BatchNormalization()  # BN层3
+        self.a5 = Activation('relu')  # 激活层3
         self.c6 = Conv2D(filters=256, kernel_size=(3, 3), padding='same')
-        self.b6 = BatchNormalization()  # BN层1
-        self.a6 = Activation('relu')  # 激活层1
+        self.b6 = BatchNormalization()  # BN层3
+        self.a6 = Activation('relu')  # 激活层3
         self.c7 = Conv2D(filters=256, kernel_size=(3, 3), padding='same')
         self.b7 = BatchNormalization()
         self.a7 = Activation('relu')
@@ -46,11 +46,11 @@ class VGG16(keras.Model):
         self.d3 = Dropout(0.2)
 
         self.c8 = Conv2D(filters=512, kernel_size=(3, 3), padding='same')
-        self.b8 = BatchNormalization()  # BN层1
-        self.a8 = Activation('relu')  # 激活层1
+        self.b8 = BatchNormalization()  # BN层4
+        self.a8 = Activation('relu')  # 激活层4
         self.c9 = Conv2D(filters=512, kernel_size=(3, 3), padding='same')
-        self.b9 = BatchNormalization()  # BN层1
-        self.a9 = Activation('relu')  # 激活层1
+        self.b9 = BatchNormalization()  # BN层4
+        self.a9 = Activation('relu')  # 激活层4
         self.c10 = Conv2D(filters=512, kernel_size=(3, 3), padding='same')
         self.b10 = BatchNormalization()
         self.a10 = Activation('relu')
@@ -58,11 +58,11 @@ class VGG16(keras.Model):
         self.d4 = Dropout(0.2)
 
         self.c11 = Conv2D(filters=512, kernel_size=(3, 3), padding='same')
-        self.b11 = BatchNormalization()  # BN层1
-        self.a11 = Activation('relu')  # 激活层1
+        self.b11 = BatchNormalization()  # BN层5
+        self.a11 = Activation('relu')  # 激活层5
         self.c12 = Conv2D(filters=512, kernel_size=(3, 3), padding='same')
-        self.b12 = BatchNormalization()  # BN层1
-        self.a12 = Activation('relu')  # 激活层1
+        self.b12 = BatchNormalization()  # BN层5
+        self.a12 = Activation('relu')  # 激活层5
         self.c13 = Conv2D(filters=512, kernel_size=(3, 3), padding='same')
         self.b13 = BatchNormalization()
         self.a13 = Activation('relu')
@@ -195,9 +195,11 @@ class VGG16Trainer:
 
     # VGG比较简单，可以直接用keras封装好的函数库
 def train_VGG(data_name,test_data_name,name='',kind=''):
+    K.clear_session()
+    gc.collect()
     data_matrix = np.load(f'./Datasets/VGG_Datasets_{data_name}.npz')
     model = VGG16()
-    model.build((64, 224, 224))
+    model.build((32, 224, 224))
     model.summary()
     scheduler = keras.optimizers.schedules.ExponentialDecay(0.001, decay_steps=1000,
                                                             decay_rate=0.96)
@@ -209,8 +211,16 @@ def train_VGG(data_name,test_data_name,name='',kind=''):
     data_test_matrix = np.load(f'./Datasets/VGG_Datasets_{test_data_name}.npz')
     imgs_test, labels_test = data_test_matrix["imgs"], data_test_matrix["labels"]
     imgs_train, labels_train = data_matrix["imgs"], data_matrix["labels"]
-    history = model.fit(imgs_train, labels_train, batch_size=64, epochs=100,
-                        validation_data=(imgs_test, labels_test), shuffle=True,
+    # 构建训练集数据管道（节省内存）
+    batch_size = 32 # 建议先从小 batch size 开始测试
+    train_ds = tf.data.Dataset.from_tensor_slices((imgs_train, labels_train))
+    train_ds = train_ds.shuffle(buffer_size=1000).batch(batch_size).prefetch(tf.data.AUTOTUNE)
+
+    # 构建测试集数据管道
+    val_ds = tf.data.Dataset.from_tensor_slices((imgs_test, labels_test))
+    val_ds = val_ds.batch(batch_size).prefetch(tf.data.AUTOTUNE)
+    history = model.fit(train_ds, batch_size=batch_size, epochs=100,
+                        validation_data=val_ds, shuffle=True,
                         callbacks=ckpt_callback)
     history_dict = history.history
     fig, axes = plt.subplots(1, 2,figsize=(12,4))
@@ -227,5 +237,6 @@ def train_VGG(data_name,test_data_name,name='',kind=''):
     plt.savefig(f'./Record/VGG16_history{name}.png', dpi=300)
     K.clear_session()
     gc.collect()
+    savemat(f'./Record/VGG16_history{name}.mat',{"train_acc":history_dict['sparse_categorical_accuracy'],"test_acc":history_dict['val_sparse_categorical_accuracy']})
 if __name__ == "__main__":
     ...

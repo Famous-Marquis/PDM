@@ -8,6 +8,7 @@
 import numpy as np
 import math
 import matplotlib.pyplot as plt
+from matplotlib.pyplot import imshow
 
 from scipy import signal
 
@@ -94,7 +95,7 @@ def OAM_mode(mode, size=224):
 
 
 if __name__ == "__main__":
-    ps = BatchPhaseScreen(batch=1)
+    ps = PhaseScreen()
     mode_list = [
         (1),
         (-2),
@@ -112,23 +113,38 @@ if __name__ == "__main__":
         (-2, 3, -5),
         (1, 3, -2, -5),
     ]
-    fig, axs = plt.subplots(2,3)
-    for i,mode in enumerate(mode_list[5:8]):
+    # fig, axs = plt.subplots(2,3)
+    for i,mode in enumerate(mode_list):
 
         u1 = OAM_mode(mode)
+        imshow(u1)
+        plt.axis("off")
+        plt.subplots_adjust(left=0, right=1, top=1, bottom=0)  # 去除边距
+        # plt.savefig('output.pdf', bbox_inches='tight', pad_inches=0)
+        plt.savefig(f"./Record/beam_{i}.pdf",bbox_inches='tight', pad_inches=0,dpi=300)
         # u2 = LG_mode(l=-3)
-        axs[0,i].imshow(u1)
-        axs[0,i].set_xticks([])
-        axs[0,i].set_yticks([])
+        # axs[0,i].imshow(u1)
+        # axs[0,i].set_xticks([])
+        # axs[0,i].set_yticks([])
 
-        ps.simulate_turbulence(7)
+        # ps.simulate_turbulence(r0= 0.05, l0= 5e-3, L0= 10, R=0.5, alpha= 11 / 3)
         # ps.update_screen()
-        psf = abs(ps.get_psf())
-        print(psf.shape,psf.dtype)
-        print(u1.shape)
-        image = signal.fftconvolve(psf, u1, "same")
-        axs[1,i].imshow(image)
-        axs[1,i].set_xticks([])
-        axs[1,i].set_yticks([])
-    fig.tight_layout()
-    fig.savefig("beam.pdf")
+        # psf = abs(ps.get_psf())
+        # phase_screen=ps.get_screen()
+        # plt.imshow(phase_screen)
+        # plt.axis("off")
+        # plt.subplots_adjust(left=0, right=1, top=1, bottom=0)  # 去除边距
+        # plt.savefig("PhaseScreen_{}.pdf".format(i),bbox_inches='tight', pad_inches=0,dpi=300)
+        # print(psf.shape,psf.dtype)
+        # # print(u1.shape)
+        # image = signal.fftconvolve(psf, u1, "same")
+        # imshow(image)
+        # plt.xticks([])
+        # plt.yticks([])
+        # plt.savefig(f"./Record/beam_t_{i}.pdf",bbox_inches='tight', pad_inches=0)
+
+        # axs[1,i].imshow(image)
+        # axs[1,i].set_xticks([])
+        # axs[1,i].set_yticks([])
+    # fig.tight_layout()
+    # fig.savefig("beam.pdf")

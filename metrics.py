@@ -3,12 +3,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas
 import pandas as pd
-import seaborn as sns
 from matplotlib.patches import Ellipse
+from scipy.io import savemat
 from scipy.linalg import sqrtm
 from scipy.stats import chi2
 from sklearn.decomposition import PCA
-from win32file import FD_OOB
 
 from plot_struct import plot_struct
 
@@ -196,6 +195,7 @@ def compare_structure(real_data, ddpm_data, gan_data,maxlen,csv_name,params_dict
     D_mean_ddpm,D_std_ddpm, r_over_r0_ddpm = plot_struct(ddpm_data[:maxlen],R=params_dict['R'],r0=params_dict['r0'])
     D_mean_gan, D_std_gan,r_over_r0_gan = plot_struct(gan_data[:maxlen],R=params_dict['R'],r0=params_dict['r0'])
     D_mean,D_std, r_over_r0 = plot_struct(real_data[:maxlen],R=params_dict['R'],r0=params_dict['r0'])
+    savemat("./Record/r_over_r0.mat", {"r_over_r0":r_over_r0})
     fig = plt.figure(figsize=(6, 4))
     plt.plot(r_over_r0, D_mean, 'go-', label='ground truth $D_\phi(r)$')
     # plt.fill_between(r_over_r0, D_mean-D_std,D_mean+D_std,color='green',alpha=0.3)

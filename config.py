@@ -7,7 +7,8 @@ MODEL_CONFIG = {
     "predict_cov": False,  # True or False
     "cosine_schedule": False,
     "beta_1": 1e-5,#1e-5
-    "beta_T": 0.035,  # 0.095调节这两个参数，使得正向扩散的终点接近高斯噪声
+    # 最初两个params是在0.5倍率下，后来这个是1/0.423。只需要进行缩放就可以了。
+    "beta_T": 0.095,  # 0.095，0.035调节这两个参数，使得正向扩散的终点接近高斯噪声
     "T": 50,
     "epochs": 200,
     "GAN_epochs": 200,

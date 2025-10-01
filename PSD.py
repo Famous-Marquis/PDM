@@ -4,7 +4,6 @@ import mpmath as mp
 import numpy as np
 from matplotlib import pyplot as plt
 
-
 def A_alpha(alpha=11 / 3):
     result = (
             2 ** (alpha - 6)
@@ -27,27 +26,30 @@ def modified_Von_Karman(l0: float, L0: float,r0,alpha):
     else:
         kappa_0 = 1 / L0
 
-    def fun(kappa):
+    def fun(kappa,is_mp=False):
         if kappa_m == float("inf"):
             kappa_ratio = 0
         else:
             kappa_ratio = kappa / kappa_m
+#! Warning: mp and np are not compatible in different implementations. When error occurs, please change another.
         PSD_phi = (
-                # 1
+                1
                 #2*mp.pi
-                # / 0.432
-                0.5
+                / 0.432
+                # 0.5
                 * A_alpha(alpha)
                 * r0 ** (-5 / 3)
-                * mp.exp(-((kappa_ratio) ** 2))
+                * np.exp(-((kappa_ratio) ** 2))
                 / ((kappa ** 2 + kappa_0 ** 2) ** (alpha / 2))
         )
+
+
         return PSD_phi
 
     return fun
 
 
-def Kolmogorov(r0):
+def Kolmogorov(r0=0.05):
     l0 = 0.0
     L0 = float("inf")
     alpha=11/3
