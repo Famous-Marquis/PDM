@@ -1,10 +1,29 @@
+# Portions of this code are derived from unpublished work by Lu Chenda
+# presented at OFC 2021 https://opg.optica.org/abstract.cfm?URI=OFC-2021-Th1A.16
+# Copyright (c) 2021 The Author(s)
+#
+# These portions are used with permission.
+# -------------------------------------------------------------------------------
+# Copyright 2025 Beijing University of Posts and Telecommunications
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import csv
 import multiprocessing as mp
 from typing import Union
 import numpy as np
 from scipy import signal
 from PIL import Image
-import os
 from tqdm import tqdm
 from aberration import PhaseScreen
 from beam import LG_mode

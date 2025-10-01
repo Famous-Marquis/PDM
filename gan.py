@@ -1,13 +1,16 @@
+# Portions of this code are derived from unpublished work by Lu Chenda
+# presented at OFC 2021 https://opg.optica.org/abstract.cfm?URI=OFC-2021-Th1A.16
+# Copyright (c) 2021 The Author(s)
+#
+# These portions are used with permission.
+
 import os
 import sys
-
-import pandas
 import tensorflow as tf
 from matplotlib import pyplot as plt
 from tensorflow import keras
 from tensorflow.keras import layers
 from tensorflow.keras.optimizers.schedules import ExponentialDecay
-
 from Train import frechet_distance
 from config import MODEL_CONFIG
 from metrics import FD_calculator

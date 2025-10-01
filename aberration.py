@@ -1,4 +1,10 @@
-# Copyright 2025 Beijing University of Posts and Telecommunications
+# Portions of this code are derived from unpublished work by Lu Chenda
+# presented at OFC 2021 https://opg.optica.org/abstract.cfm?URI=OFC-2021-Th1A.16
+# Copyright (c) 2021 The Author(s)
+#
+# These portions are used with permission.
+#----------------------------------------------------------
+# Copyright (c) 2025 Beijing University of Posts and Telecommunications
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.

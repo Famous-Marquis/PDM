@@ -1,11 +1,32 @@
-This project is derived from work originally developed by ZOUbohao
-and is distributed under the MIT License.
+This project contains code from multiple sources:
 
+1. Code from Lu Chenda (Beijing University of Posts and Telecommunications),
+   presented at OFC 2021 [Orbital Angular Momentum (OAM) Recognition with
+   Generative Adversarial Network (GAN) based Atmospheric Modeling]
+   (https://opg.optica.org/abstract.cfm?URI=OFC-2021-Th1A.16), used with permission.
+   Copyright (c) 2021 The Author(s)
+
+2. Original work from [DenoisingDiffusionProbabilityModel-ddpm-]
+   (https://github.com/zoubohao/DenoisingDiffusionProbabilityModel-ddpm-),
+   licensed under MIT License.
+   Copyright (c) 2022 Zoubohao
+
+3. Modifications and new code by Hou Jiale, licensed under Apache 2.0.
+   Copyright (c) 2025 Hou Jiale (Beijing University of Posts and Telecommunications)
+
+==============================================================================
+Lu Chenda's OFC 2021 Code:
+
+    Copyright (c) 2021 The Author(s)
+
+    - These portions are used with explicit permission from the author.
+    - This code remains the intellectual property of the original authors.
+    - Redistribution may require separate permission.
 ===============================================================================
 Original MIT Licensed Work:
 
     Copyright (c) 2022 ZOUbohao
-'''
+
     Permission is hereby granted, free of charge, to any person obtaining a copy
     of this software and associated documentation files (the "Software"), to deal
     in the Software without restriction, including without limitation the rights
@@ -23,11 +44,11 @@ Original MIT Licensed Work:
     LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
     OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
     SOFTWARE.
-'''
+
 ===============================================================================
 Modifications and Additions:
 
-   Copyright 2025 Beijing University of Posts and Telecommunications
+   Copyright 2025 Hou Jiale (Beijing University of Posts and Telecommunications)
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.

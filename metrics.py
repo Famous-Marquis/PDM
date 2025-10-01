@@ -8,7 +8,6 @@ from scipy.io import savemat
 from scipy.linalg import sqrtm
 from scipy.stats import chi2
 from sklearn.decomposition import PCA
-
 from plot_struct import plot_struct
 
 def compare_pca_spectrum(x, y, k=10):
