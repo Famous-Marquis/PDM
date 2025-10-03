@@ -23,8 +23,9 @@ import numpy as np
 import pandas as pd
 from PIL import Image
 from scipy import signal
+from scipy.signal import convolve
 from tqdm import tqdm
-from aberration import ZERNIKE_NUMS
+from aberration import ZERNIKE_NUMS, PhaseScreen
 from beam import LG_mode
 
 DATADIR = "./Datasets/"
@@ -134,13 +135,20 @@ def gen_data(l0,L0,r0,R,alpha,ps,nums,name):
     np.save(name,arr)
 
 
-def process_coeff_beam(coeff, beam, ps):
+def process_coeff_beam(coeff, beam, ps,test_mode=False):
     ps.set_zernike_coeffients(coeff)
     psf = ps.get_psf()
-    img = signal.fftconvolve(psf, beam)
-    img = np.abs(img)
-    img = resize_beam(img)
-    return img
+    # Warning! Do not use `convolve` for large convolve. Use `fftconvolve` instead.
+    # img=convolve(beam,psf, mode='full')
+    img = signal.fftconvolve(abs(psf), beam,mode="same")
+    # img = np.abs(img)
+    img_real,img_imag=img.real,img.imag
+    # img_real = resize_beam(img_real)
+    # img_imag = resize_beam(img_imag)
+    if test_mode:
+        return img_real, img_imag,img/np.max(img)
+    else:
+        return img/np.max(img)
 
 
 def gen_img_label(coeff_pickle_or_npy, name,ps,num):
@@ -178,5 +186,6 @@ def gen_img_label(coeff_pickle_or_npy, name,ps,num):
 
 
 if __name__ == "__main__":
-
+    ps=PhaseScreen()
+    ps.simulate_turbulence()
     ...

@@ -32,14 +32,15 @@ def modified_Von_Karman(l0: float, L0: float,r0,alpha):
         else:
             kappa_ratio = kappa / kappa_m
 #! Warning: mp and np are not compatible in different implementations. When error occurs, please change another.
+
         PSD_phi = (
                 1
-                #2*mp.pi
-                / 0.432
+                # 2*mp.pi
+                # / 0.432
                 # 0.5
                 * A_alpha(alpha)
                 * r0 ** (-5 / 3)
-                * np.exp(-((kappa_ratio) ** 2))
+                * mp.exp(-((kappa_ratio) ** 2))
                 / ((kappa ** 2 + kappa_0 ** 2) ** (alpha / 2))
         )
 
