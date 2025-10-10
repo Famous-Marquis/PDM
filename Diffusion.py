@@ -165,10 +165,14 @@ class DDPM(keras.Model):
         if self.predict_cov:
             eps_pred, v_pred = self.model(x_t, t), self.model_v(x_t, t)
         else:
-            eps_pred, v_pred = self.model(x_t, t), None
+            eps_pred = self.model(x_t, t)
+            v_pred=None
+            tf.debugging.check_numerics(x_0, 'x_0 Error')
+            tf.debugging.check_numerics(x_t, 'x_t Error')
+            tf.debugging.check_numerics(eps_pred, 'eps_p Error')
         return x_t, eps, t, eps_pred, v_pred
 
-    @tf.function
+    # @tf.function
     def train_step(self, x_0):
         if self.predict_cov:
             with tf.GradientTape() as tape:
@@ -211,16 +215,29 @@ class DDPM(keras.Model):
 
         # 非余弦调度，3个返回值 + None
         else:
-            with tf.GradientTape() as eps_tape:
+            # print(tf.executing_eagerly())
+            with tf.GradientTape(persistent=True) as eps_tape:
                 x_t, eps, t, eps_pred, v_pred = self.call(x_0)
+                tf.debugging.check_numerics(tf.cast(t, tf.float32), 't Error')
+                tf.debugging.check_numerics(x_t, 'x_t Error')
+                tf.debugging.check_numerics(eps, 'eps Error')
+                tf.debugging.check_numerics(eps_pred, 'eps_p Error')
                 loss_simple = self.loss_fn(eps_pred, eps)
+                tf.debugging.check_numerics(loss_simple, 'loss_simple Error')
                 weight = get_weight(t, self.alpha_bar)
                 weight = tf.cast(weight, tf.float32)
-                loss = weight * loss_simple
+                loss=loss_simple
+                tf.print(loss)
+                # loss = weight * loss_simple
+                # print(loss.numpy())
+                tf.debugging.check_numerics(weight, 'weight Error')
                 tf.debugging.check_numerics(loss,'loss Error')
             eps_grad = eps_tape.gradient(loss, self.model.trainable_variables)
+            gradients, _ = tf.clip_by_global_norm(eps_grad, 1.0)
+            tf.debugging.check_numerics(eps_grad, 'grad Error')
             self.optimizer.apply_gradients(zip(eps_grad, self.model.trainable_variables))
             self.loss_tracker.update_state(loss)
+
             return {'loss': loss}
 
     @property
@@ -257,7 +274,7 @@ class DDPM(keras.Model):
         plt.close(fig)
         print("Diffusion process plot successfully saved")
 
-    @tf.function
+    # @tf.function
     def denoise_step_cov(self, x_t, t):
         coeff1 = extract(self.one_div_sqrt_alpha, t, x_t.shape)
         coeff2 = extract(self.beta_div_sqrt_one_minus_alpha_bar, t, x_t.shape)
@@ -284,7 +301,7 @@ class DDPM(keras.Model):
         x_t = x_t_prev
         return x_t
 
-    @tf.function
+    # @tf.function
     def denoise_step(self, x_t, t):
         coeff1 = extract(self.one_div_sqrt_alpha, t, x_t.shape)
         coeff2 = extract(self.beta_div_sqrt_one_minus_alpha_bar, t, x_t.shape)
@@ -306,7 +323,7 @@ class DDPM(keras.Model):
         # print(x_t_prev[0].numpy())
         return x_t_prev
 
-    @tf.function
+    # @tf.function
     def denoise(self, x_T):
         x_t = x_T
         if self.predict_cov:
@@ -349,7 +366,7 @@ class DDPM(keras.Model):
                     print("Denoise process plot successfully saved")
         return x_t
 
-    @tf.function
+    # @tf.function
     def generate_samples(self, sample_num):
         batch_size = 100
         latent_dim = ZERNIKE_NUMS

@@ -89,7 +89,7 @@ class FCMean(keras.Model):
                                                                                       stddev=0.05)))
         self._layers.append(layers.LayerNormalization())
         self._layers.append(layers.Dropout(0.2))
-        # self._layers.append(layers.LeakyReLU())
+        self._layers.append(layers.LeakyReLU())
 
         # self.attn=_layers.Attention()
         # self.d5 = _layers.Dropout(0.2)
@@ -97,19 +97,22 @@ class FCMean(keras.Model):
     def call(self, x, t):
         # y = self.encoder(x)
         emb = self.time_embedding(t)
+        tf.debugging.check_numerics(emb, 'emb Error')
         y = x + emb
         # y = self.encoder_activation(y)
-        for layer in self._layers:
+        for i,layer in enumerate(self._layers):
             if isinstance(layer, layers.Embedding):
                 emb = layer(t)
                 y = y + emb
+                tf.debugging.check_numerics(y, 'y Error')
             else:
                 y = layer(y)
+                print(y.shape)
+                tf.debugging.check_numerics(y, 'y Error')
         # y = self.decoder(y)
         # y = self.decoder_norm(y)
 
         return y
-
 
 class FCCov(keras.Model):
     def __init__(self, d_model, model_struct: List):

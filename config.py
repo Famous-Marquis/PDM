@@ -12,9 +12,9 @@ MODEL_CONFIG = {
     "T": 50,
     "epochs": 200,
     "GAN_epochs": 200,
-    "batch_size": 64,
-    "lr_min": 0.01,  # 0.01,
-    "lr_max": 0.3,  # 0.3,
+    "batch_size": 32,
+    "lr_min": 0.00001,  # 0.01,
+    "lr_max": 0.0003,  # 0.3,
     "gan_learning_rate": 0.0005,  # 0.0005
     "VGG_lr": 0.001,
     "model_checkpoint_path": "./Checkpoints/DDPM_model.ckpt",
