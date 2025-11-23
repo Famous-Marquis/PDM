@@ -13,16 +13,19 @@
 # limitations under the License.
 
 import os
+
 import numpy as np
 import tensorflow as tf
 from matplotlib import pyplot as plt
 from tensorflow import keras
+
 from Diffusion import DDPM
 from Model import FCMean, FCCov
 from aberration import ZERNIKE_NUMS
 from config import MODEL_CONFIG
 from metrics import frechet_distance, FD_calculator
 from plot_struct import plot_struct, plot_struct_curve
+
 
 class DDPMMonitor(keras.callbacks.Callback):
     def __init__(self, real_data, model_checkpoint_path):
@@ -169,7 +172,7 @@ class DDPMTrainer:
         # 加载数据
         tf_dataset, data_matrix = self.load_data(batch_size)
         # 编译模型
-        total_steps = len(tf_dataset) // batch_size
+        total_steps = len(tf_dataset)
         warmup_steps = int(total_steps * 0.1)
         self.ddpm.compile(self.model_config["lr_min"], self.model_config["lr_max"],
                           total_steps=total_steps, warmup_steps=warmup_steps)
